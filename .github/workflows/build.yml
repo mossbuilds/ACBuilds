@@ -15,7 +15,7 @@ on:
         default: false
 
 permissions:
-  contents: read
+  contents: write
   packages: write
 
 concurrency:
@@ -38,6 +38,7 @@ jobs:
     outputs:
       build: ${{ steps.cmp.outputs.build }}
       ace_sha: ${{ steps.up.outputs.ace_sha }}
+      version: ${{ steps.up.outputs.version }}
       world_tag: ${{ steps.up.outputs.world_tag }}
       fingerprint: ${{ steps.up.outputs.fingerprint }}
     steps:
@@ -53,6 +54,10 @@ jobs:
             s=$(gh api repos/$r/commits --jq '.[0].sha' 2>/dev/null || echo none)
             extra="$extra $r@$s"
           done
+          # Version = latest ACE release tag + our own revision: v1.78.4816-acb.3
+          acev=$(gh api repos/$ACE_REPO/releases/latest --jq .tag_name)
+          n=$(gh api "repos/${{ github.repository }}/git/matching-refs/tags/${acev}-acb." --jq 'length' 2>/dev/null || echo 0)
+          echo "version=${acev}-acb.$((n+1))" >> "$GITHUB_OUTPUT"
           echo "ace_sha=$ace" >> "$GITHUB_OUTPUT"
           echo "world_tag=$world" >> "$GITHUB_OUTPUT"
           echo "fingerprint=$(echo "$ace $world $extra" | sha256sum | cut -c1-16)" >> "$GITHUB_OUTPUT"
@@ -89,9 +94,22 @@ jobs:
             ACE_REF=${{ needs.check.outputs.ace_sha }}
             WORLD_TAG=${{ needs.check.outputs.world_tag }}
           labels: |
+            org.opencontainers.image.version=${{ needs.check.outputs.version }}
             acbuilds.fingerprint=${{ needs.check.outputs.fingerprint }}
           tags: |
             ${{ env.IMAGE }}:latest
             ${{ env.IMAGE }}:ace-${{ needs.check.outputs.ace_sha }}
+            ${{ env.IMAGE }}:${{ needs.check.outputs.version }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+      - name: Tag and release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          v="${{ needs.check.outputs.version }}"
+          sha=$(git rev-parse HEAD)
+          gh release create "$v" --target "$sha" --title "ACBuilds $v" --notes "Image: \`docker pull ${{ env.IMAGE }}:$v\`
+          Package: https://github.com/${{ github.repository }}/pkgs/container/acbuilds
+
+          - ACE: https://github.com/ACEmulator/ACE/commit/${{ needs.check.outputs.ace_sha }}
+          - World data: ${{ needs.check.outputs.world_tag }}"
