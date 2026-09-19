@@ -9,7 +9,7 @@ function Backup {
   $dbs = if ($All) { 'ace_auth ace_shard ace_world' } else { 'ace_auth ace_shard' }
   $f = "backups\ace-$(Get-Date -Format yyyyMMdd-HHmmss).sql"
   # dump inside the container (no PowerShell pipe encoding issues), then copy out
-  docker exec ace-db sh -c "mariadb-dump -uace -pace-local --single-transaction --databases $dbs > /tmp/b.sql"
+  docker exec ace-db sh -c "mariadb-dump -h127.0.0.1 -uace -pace-local --single-transaction --databases $dbs > /tmp/b.sql"
   if ($LASTEXITCODE -ne 0) { throw 'Backup FAILED' }
   docker cp ace-db:/tmp/b.sql $f; docker exec ace-db rm /tmp/b.sql
   if (-not (Test-Path $f) -or (Get-Item $f).Length -lt 1000) { throw 'Backup FAILED (empty file)' }
@@ -18,7 +18,7 @@ function Backup {
 function Restore($f) {
   if (-not (Test-Path $f)) { throw "No such file: $f" }
   docker compose stop ace-server
-  docker cp $f ace-db:/tmp/r.sql; docker exec ace-db sh -c 'mariadb -uace -pace-local < /tmp/r.sql; rm /tmp/r.sql'
+  docker cp $f ace-db:/tmp/r.sql; docker exec ace-db sh -c 'mariadb -h127.0.0.1 -uace -pace-local < /tmp/r.sql; rm /tmp/r.sql'
   if ($LASTEXITCODE -ne 0) { throw 'Restore FAILED' }
   docker compose start ace-server; Write-Host 'Restore done.'
 }
@@ -34,7 +34,7 @@ switch ($Cmd) {
       docker compose rm -sf ace-db; docker volume rm acbuilds_ace-db | Out-Null
       docker compose up -d ace-db
       while ((docker inspect -f '{{.State.Health.Status}}' ace-db) -ne 'healthy') { Start-Sleep 3 }
-      docker cp $b ace-db:/tmp/r.sql; docker exec ace-db sh -c 'mariadb -uace -pace-local < /tmp/r.sql; rm /tmp/r.sql'
+      docker cp $b ace-db:/tmp/r.sql; docker exec ace-db sh -c 'mariadb -h127.0.0.1 -uace -pace-local < /tmp/r.sql; rm /tmp/r.sql'
       docker compose up -d
     } else { throw 'update [server|db|all]' }
     Write-Host "Update complete. Backup kept at $b"

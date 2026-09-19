@@ -12,11 +12,11 @@ mkdir -p backups
 backup() {
   local dbs="ace_auth ace_shard"; [ "${1:-}" = "--all" ] && dbs="ace_auth ace_shard ace_world"
   BACKUP_FILE="backups/ace-$(date +%Y%m%d-%H%M%S).sql.gz"
-  $D exec ace-db mariadb-dump -uace -pace-local --single-transaction --databases $dbs | gzip > "$BACKUP_FILE"
+  $D exec ace-db mariadb-dump -h127.0.0.1 -uace -pace-local --single-transaction --databases $dbs | gzip > "$BACKUP_FILE"
   if ! gzip -t "$BACKUP_FILE" 2>/dev/null || [ "$(gunzip -c "$BACKUP_FILE" | wc -c)" -lt 1000 ]; then echo "Backup FAILED"; rm -f "$BACKUP_FILE"; exit 1; fi
   echo "Backup OK: $BACKUP_FILE ($(du -h "$BACKUP_FILE" | cut -f1))"
 }
-load() { gunzip -c "$1" | $D exec -i ace-db mariadb -uace -pace-local; }
+load() { gunzip -c "$1" | $D exec -i ace-db mariadb -h127.0.0.1 -uace -pace-local; }
 
 case "${1:-}" in
   backup) backup "${2:-}" ;;
