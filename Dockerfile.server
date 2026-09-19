@@ -1,8 +1,9 @@
 # syntax=docker/dockerfile:1.7
-# ACBuilds SERVER image: just the compiled ACE server (.NET 10). The database lives in the separate acbuilds-db image.
+# ACBuilds SERVER image: compiled ACE server (.NET 10) + community mods built against it. The database is the separate acbuilds-db image.
 ARG ACE_REPO=https://github.com/ACEmulator/ACE.git
 ARG ACE_REF=master
 
+# ---- stage 1: compile ACE ----
 FROM mcr.microsoft.com/dotnet/sdk:10.0-noble AS build
 ARG ACE_REPO
 ARG ACE_REF
@@ -11,9 +12,21 @@ WORKDIR /src
 RUN git init . && git remote add origin "$ACE_REPO" && git fetch --depth 1 origin "$ACE_REF" && git checkout FETCH_HEAD
 RUN dotnet publish Source/ACE.Server/ACE.Server.csproj -c Release -o /ace
 
+# ---- stage 2: build mods from source against the ACE we just built ----
+# Each mod's csproj hard-codes Windows paths + net8.0; we point its ACE references at /ace/*.dll, retarget to net10.0 and
+# build into /mods/<Name>. A mod that fails to build is SKIPPED (logged) so it can never break the server image.
+FROM build AS mods
+ARG MODS_REV=none
+COPY server/build-mod.sh /build-mod.sh
+RUN chmod +x /build-mod.sh && echo "mods rev: $MODS_REV" && mkdir -p /mods /modsrc && cd /modsrc \
+ && git clone --depth 1 https://github.com/OptimShi/CustomClothingBase && /build-mod.sh CustomClothingBase /modsrc/CustomClothingBase \
+ && git clone --depth 1 https://github.com/ACEmulator/ACE.Mods.WebAPI && /build-mod.sh ACE.Web /modsrc/ACE.Mods.WebAPI/Templates/ACE.Web
+
+# ---- stage 3: runtime ----
 FROM mcr.microsoft.com/dotnet/runtime:10.0-noble
 ARG ACE_REF
 COPY --from=build /ace /ace
+COPY --from=mods /mods /opt/mods
 # Container mode reads /ace/Config/Config.js (ACE Program.cs); DB host is the compose service name "ace-db".
 COPY config/Config.js /ace/Config/Config.js
 COPY config/Config.js /ace/Config.js

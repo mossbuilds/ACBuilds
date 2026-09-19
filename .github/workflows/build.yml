@@ -94,6 +94,7 @@ jobs:
           push: true
           build-args: |
             ACE_REF=${{ needs.check.outputs.ace_sha }}
+            MODS_REV=${{ needs.check.outputs.fingerprint }}
           labels: |
             org.opencontainers.image.version=${{ needs.check.outputs.version }}
             acbuilds.fingerprint=${{ needs.check.outputs.fingerprint }}
@@ -110,6 +111,7 @@ jobs:
           push: true
           build-args: |
             ACE_REF=${{ needs.check.outputs.ace_sha }}
+            MODS_REV=${{ needs.check.outputs.fingerprint }}
             WORLD_TAG=${{ needs.check.outputs.world_tag }}
           labels: |
             org.opencontainers.image.version=${{ needs.check.outputs.version }}

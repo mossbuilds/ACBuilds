@@ -13,6 +13,8 @@ ARG WORLD_TAG
 RUN apt-get update && apt-get install -y --no-install-recommends git curl unzip jq ca-certificates && rm -rf /var/lib/apt/lists/*
 WORKDIR /data
 RUN git init src && cd src && git remote add origin "$ACE_REPO" && git fetch --depth 1 origin "$ACE_REF" && git checkout FETCH_HEAD && mv Database /data/Database
+ARG MODS_REV=none
+RUN git clone --depth 1 https://github.com/titaniumweiner/ACEUniqueWeenies /data/weenies
 WORKDIR /data/world
 RUN set -eux; \
     if [ "$WORLD_TAG" = "latest" ]; then api="https://api.github.com/repos/$WORLD_REPO/releases/latest"; \

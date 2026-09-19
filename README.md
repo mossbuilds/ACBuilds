@@ -20,6 +20,8 @@ The script checks for Docker, installs it if needed, pulls the image, starts it,
 - **macOS:** `brew install --cask docker` (or download Docker Desktop from docker.com), then open Docker once.
 - **Linux:** `curl -fsSL https://get.docker.com | sh && sudo systemctl enable --now docker && sudo usermod -aG docker $USER` (log out/in).
 
+> Full build order, repos pulled in and a diagram: [docs/WORKFLOW.md](docs/WORKFLOW.md)
+
 ## Two containers
 
 | Container | Image | Holds |
@@ -49,3 +51,6 @@ Every build is released as `<ACE version>-acb.<n>` (e.g. `v1.78.4816-acb.2`) on 
 - Upstream ACE targets .NET 10, so the server image uses the .NET 10 runtime.
 - Drop a `.sql` in `world-override/` before building the DB image to replace the downloaded world data.
 - The DB credential in `config/Config.js` is fixed; it is only reachable from the server container.
+
+## Included mods and content
+Built into the server image: [CustomClothingBase](https://github.com/OptimShi/CustomClothingBase) and the ACE.Web mod from [ACE.Mods.WebAPI](https://github.com/ACEmulator/ACE.Mods.WebAPI). Loaded into the world database: [ACEUniqueWeenies](https://github.com/titaniumweiner/ACEUniqueWeenies). Mods are built from source; one that fails to build is skipped (look for `MOD SKIPPED` in the build log).
