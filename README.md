@@ -20,21 +20,32 @@ The script checks for Docker, installs it if needed, pulls the image, starts it,
 - **macOS:** `brew install --cask docker` (or download Docker Desktop from docker.com), then open Docker once.
 - **Linux:** `curl -fsSL https://get.docker.com | sh && sudo systemctl enable --now docker && sudo usermod -aG docker $USER` (log out/in).
 
-## Run manually
+## Two containers
 
-You must supply your own AC client DAT files (not redistributable).
+| Container | Image | Holds |
+|---|---|---|
+| `ace-server` | `ghcr.io/mossbuilds/acbuilds-server` | the compiled ACE server (UDP 9000/9001) |
+| `ace-db` | `ghcr.io/mossbuilds/acbuilds-db` | MariaDB, pre-seeded (`ace_auth`, `ace_shard`, `ace_world`); not exposed outside the compose network |
+
+Run manually: `DATS_DIR=/path/to/dats docker compose up -d` (needs your AC client DAT files; optional `mods/` and `content/` folders are mounted too).
+
+## Backup, restore and updates (`acb.sh` / `acb.ps1`)
 
 ```
-docker run -d --name ace \
-  -p 9000:9000/udp -p 9001:9001/udp \
-  -v /path/to/dats:/ace/Dats \
-  -v ace-db:/var/lib/mysql \
-  ghcr.io/mossbuilds/acbuilds:latest
+./acb.sh backup            # accounts + characters (ace_auth, ace_shard) -> backups/ace-<time>.sql.gz   (--all adds ace_world)
+./acb.sh restore backups/ace-20260919-120000.sql.gz
+./acb.sh update server     # backup first, then pull + restart ONLY the server; database untouched
+./acb.sh update db         # backup first, new pre-seeded DB image, then your accounts/characters restored into it
+./acb.sh status
 ```
 
-Optional mounts: `/ace/Mods` (Harmony mods), `/ace/Content` (world customization SQL). Set `-e INNODB_BUFFER_POOL_SIZE=512M` on small hosts (default 2G). Auto account creation is on; connect your client to the host on port 9000.
+Windows: same commands with `.\acb.ps1` (`-All` instead of `--all`). Every `update` takes a backup first and stops if the backup fails; the backup file is kept. Copy `backups/` somewhere off the machine for real safety.
+
+## Versions
+
+Every build is released as `<ACE version>-acb.<n>` (e.g. `v1.78.4816-acb.2`) on the Releases page; both images carry that tag. Pin one with `ACB_TAG=v1.78.4816-acb.2 docker compose up -d`.
 
 ## Notes
-- Upstream ACE targets .NET 10, so the image uses the .NET 10 runtime.
-- Drop a `.sql` in `world-override/` before building to replace the downloaded world data.
-- MariaDB listens on 127.0.0.1 only, with a fixed local credential in `config/Config.js`.
+- Upstream ACE targets .NET 10, so the server image uses the .NET 10 runtime.
+- Drop a `.sql` in `world-override/` before building the DB image to replace the downloaded world data.
+- The DB credential in `config/Config.js` is fixed; it is only reachable from the server container.

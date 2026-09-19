@@ -1,0 +1,38 @@
+# syntax=docker/dockerfile:1.7
+# ACBuilds DB image: MariaDB with ace_auth / ace_shard / ace_world pre-seeded at build time.
+ARG ACE_REPO=https://github.com/ACEmulator/ACE.git
+ARG ACE_REF=master
+ARG WORLD_REPO=ACEmulator/ACE-World-16PY-Patches
+ARG WORLD_TAG=latest
+
+FROM ubuntu:24.04 AS data
+ARG ACE_REPO
+ARG ACE_REF
+ARG WORLD_REPO
+ARG WORLD_TAG
+RUN apt-get update && apt-get install -y --no-install-recommends git curl unzip jq ca-certificates && rm -rf /var/lib/apt/lists/*
+WORKDIR /data
+RUN git init src && cd src && git remote add origin "$ACE_REPO" && git fetch --depth 1 origin "$ACE_REF" && git checkout FETCH_HEAD && mv Database /data/Database
+WORKDIR /data/world
+RUN set -eux; \
+    if [ "$WORLD_TAG" = "latest" ]; then api="https://api.github.com/repos/$WORLD_REPO/releases/latest"; \
+    else api="https://api.github.com/repos/$WORLD_REPO/releases/tags/$WORLD_TAG"; fi; \
+    url=$(curl -fsSL "$api" | jq -r '.assets[] | select(.name|endswith(".sql.zip")) | .browser_download_url' | head -n1); \
+    test -n "$url"; curl -fsSL -o world.zip "$url"; unzip -q world.zip; rm world.zip
+
+FROM ubuntu:24.04
+ARG DEBIAN_FRONTEND=noninteractive
+ARG ACE_REF
+ARG WORLD_TAG
+RUN apt-get update && apt-get install -y --no-install-recommends mariadb-server mariadb-client && rm -rf /var/lib/apt/lists/*
+COPY --from=data /data /tmp/data
+COPY world-override/ /tmp/world-override/
+COPY db/mariadb-ace.cnf /etc/mysql/mariadb.conf.d/99-ace.cnf
+COPY db/seed-db.sh /tmp/seed-db.sh
+COPY db/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh /tmp/seed-db.sh && /tmp/seed-db.sh && rm -rf /tmp/data /tmp/world-override /tmp/seed-db.sh
+LABEL org.opencontainers.image.source="https://github.com/mossbuilds/ACBuilds" ace.ref="${ACE_REF}" ace.world.tag="${WORLD_TAG}"
+EXPOSE 3306
+VOLUME ["/var/lib/mysql"]
+HEALTHCHECK --interval=5s --timeout=3s --retries=60 CMD mariadb-admin -uace -pace-local -h127.0.0.1 ping || exit 1
+ENTRYPOINT ["/entrypoint.sh"]

@@ -9,9 +9,8 @@ PID=$!
 for i in $(seq 1 60); do mariadb-admin --socket=/run/mysqld/mysqld.sock ping >/dev/null 2>&1 && break; sleep 1; done
 M="mariadb --socket=/run/mysqld/mysqld.sock"
 $M -e "CREATE DATABASE ace_auth; CREATE DATABASE ace_shard; CREATE DATABASE ace_world;
-       CREATE USER 'ace'@'127.0.0.1' IDENTIFIED BY 'ace-local'; CREATE USER 'ace'@'localhost' IDENTIFIED BY 'ace-local';
-       GRANT ALL ON ace_auth.* TO 'ace'@'127.0.0.1'; GRANT ALL ON ace_shard.* TO 'ace'@'127.0.0.1'; GRANT ALL ON ace_world.* TO 'ace'@'127.0.0.1';
-       GRANT ALL ON ace_auth.* TO 'ace'@'localhost'; GRANT ALL ON ace_shard.* TO 'ace'@'localhost'; GRANT ALL ON ace_world.* TO 'ace'@'localhost';"
+       CREATE USER 'ace'@'%' IDENTIFIED BY 'ace-local'; 
+       GRANT ALL ON ace_auth.* TO 'ace'@'%'; GRANT ALL ON ace_shard.* TO 'ace'@'%'; GRANT ALL ON ace_world.* TO 'ace'@'%';
 # World first: Shard updates join against ace_world tables.
 # World data: a *.sql in world-override/ wins over the downloaded release.
 W=$(ls /tmp/world-override/*.sql 2>/dev/null | head -n1 || true)

@@ -1,0 +1,26 @@
+# syntax=docker/dockerfile:1.7
+# ACBuilds SERVER image: just the compiled ACE server (.NET 10). The database lives in the separate acbuilds-db image.
+ARG ACE_REPO=https://github.com/ACEmulator/ACE.git
+ARG ACE_REF=master
+
+FROM mcr.microsoft.com/dotnet/sdk:10.0-noble AS build
+ARG ACE_REPO
+ARG ACE_REF
+RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates && rm -rf /var/lib/apt/lists/*
+WORKDIR /src
+RUN git init . && git remote add origin "$ACE_REPO" && git fetch --depth 1 origin "$ACE_REF" && git checkout FETCH_HEAD
+RUN dotnet publish Source/ACE.Server/ACE.Server.csproj -c Release -o /ace
+
+FROM mcr.microsoft.com/dotnet/runtime:10.0-noble
+ARG ACE_REF
+COPY --from=build /ace /ace
+# Container mode reads /ace/Config/Config.js (ACE Program.cs); DB host is the compose service name "ace-db".
+COPY config/Config.js /ace/Config/Config.js
+COPY config/Config.js /ace/Config.js
+COPY server/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh && mkdir -p /ace/Dats /ace/Mods /ace/Content
+LABEL org.opencontainers.image.source="https://github.com/mossbuilds/ACBuilds" ace.ref="${ACE_REF}"
+WORKDIR /ace
+EXPOSE 9000/udp 9001/udp
+VOLUME ["/ace/Dats", "/ace/Mods", "/ace/Content"]
+ENTRYPOINT ["/entrypoint.sh"]

@@ -35,11 +35,11 @@
       { "Id": "E74EFFFF", "Description": "Hebian-To (Global Events)", "Permaload": true, "IncludeAdjacents": false, "Enabled": true }
     ]
   },
-  // Database lives in the same container (MariaDB bound to 127.0.0.1, pre-seeded at image build).
+  // Database is the separate ace-db container (compose service name). Only reachable on the compose network.
   "MySql": {
-    "Authentication": { "Host": "127.0.0.1", "Port": 3306, "Database": "ace_auth",  "Username": "ace", "Password": "ace-local", "EnableDetailedErrors": false, "EnableSensitiveDataLogging": false },
-    "Shard":          { "Host": "127.0.0.1", "Port": 3306, "Database": "ace_shard", "Username": "ace", "Password": "ace-local", "EnableDetailedErrors": false, "EnableSensitiveDataLogging": false },
-    "World":          { "Host": "127.0.0.1", "Port": 3306, "Database": "ace_world", "Username": "ace", "Password": "ace-local", "EnableDetailedErrors": false, "EnableSensitiveDataLogging": false }
+    "Authentication": { "Host": "ace-db", "Port": 3306, "Database": "ace_auth",  "Username": "ace", "Password": "ace-local", "EnableDetailedErrors": false, "EnableSensitiveDataLogging": false },
+    "Shard":          { "Host": "ace-db", "Port": 3306, "Database": "ace_shard", "Username": "ace", "Password": "ace-local", "EnableDetailedErrors": false, "EnableSensitiveDataLogging": false },
+    "World":          { "Host": "ace-db", "Port": 3306, "Database": "ace_world", "Username": "ace", "Password": "ace-local", "EnableDetailedErrors": false, "EnableSensitiveDataLogging": false }
   },
   "Offline": {
     "PurgeDeletedCharacters": false,

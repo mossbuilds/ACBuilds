@@ -1,0 +1,29 @@
+# ACBuilds: two containers - ace-db (MariaDB, pre-seeded) and ace-server (ACE). Update either one alone with ./acb.sh update server|db
+name: acbuilds
+services:
+  ace-db:
+    image: ghcr.io/mossbuilds/acbuilds-db:${ACB_TAG:-latest}
+    build: { context: ., dockerfile: Dockerfile.db }
+    container_name: ace-db
+    restart: unless-stopped
+    environment:
+      INNODB_BUFFER_POOL_SIZE: ${INNODB_BUFFER_POOL_SIZE:-2G}
+    volumes:
+      - ace-db:/var/lib/mysql
+    # 3306 is intentionally NOT published: only ace-server can reach the database.
+  ace-server:
+    image: ghcr.io/mossbuilds/acbuilds-server:${ACB_TAG:-latest}
+    build: { context: ., dockerfile: Dockerfile.server }
+    container_name: ace-server
+    restart: unless-stopped
+    depends_on:
+      ace-db: { condition: service_healthy }
+    ports:
+      - "9000:9000/udp"
+      - "9001:9001/udp"
+    volumes:
+      - ${DATS_DIR:-./dats}:/ace/Dats
+      - ./mods:/ace/Mods
+      - ./content:/ace/Content
+volumes:
+  ace-db:
