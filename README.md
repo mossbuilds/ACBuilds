@@ -9,8 +9,6 @@ Put your AC client DAT files (`client_cell_1.dat`, `client_portal.dat`, `client_
 | OS | Command |
 |---|---|
 | Windows (PowerShell, as admin) | `.\run.ps1` (or `.\run.ps1 -Dats D:\ac\dats`) |
-un.ps1` (or `.
-un.ps1 -Dats D:cdats`) |
 | macOS | `chmod +x run.sh && ./run.sh` |
 | Linux | `chmod +x run.sh && ./run.sh` |
 
