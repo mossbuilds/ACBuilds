@@ -40,11 +40,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends mariadb-server 
 COPY --from=build /ace /ace
 COPY --from=data /data /tmp/data
 COPY world-override/ /tmp/world-override/
+# Container mode reads /ace/Config/{Config.js,log4net.config} (ACE Program.cs); keep both copies.
 COPY config/Config.js /ace/Config.js
+COPY config/Config.js /ace/Config/Config.js
 COPY config/mariadb-ace.cnf /etc/mysql/mariadb.conf.d/99-ace.cnf
 COPY entrypoint.sh /entrypoint.sh
 COPY seed-db.sh /tmp/seed-db.sh
-RUN chmod +x /entrypoint.sh /tmp/seed-db.sh && mkdir -p /ace/Dats /ace/Mods /ace/Content
+RUN chmod +x /entrypoint.sh /tmp/seed-db.sh && mkdir -p /ace/Config /ace/Dats /ace/Mods /ace/Content
 
 # Pre-seed: start a private mariadbd (no network), create DBs + user, load base -> incremental updates -> world data,
 # shut down cleanly, then stash the data dir as /opt/mysql-seed. The entrypoint copies it into /var/lib/mysql on first
