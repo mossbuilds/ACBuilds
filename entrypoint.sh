@@ -12,7 +12,8 @@ if ! ls /ace/Dats/client_*.dat >/dev/null 2>&1; then echo "WARNING: no client_*.
 term() { kill -TERM "$ACE" 2>/dev/null || true; wait "$ACE" 2>/dev/null || true; kill -TERM "$DB" 2>/dev/null || true; wait "$DB" 2>/dev/null || true; exit 0; }
 trap term TERM INT
 cd /ace
-dotnet ACE.Server.dll &
+# ACE reads its console from stdin; with no TTY it spins and floods the log. Hold stdin open on a pipe that never sends.
+tail -f /dev/null | dotnet ACE.Server.dll &
 ACE=$!
 wait -n "$ACE" "$DB" || true
 term
