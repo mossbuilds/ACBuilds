@@ -1,0 +1,4 @@
+[mysqld]
+innodb_buffer_pool_size = 2G
+character-set-server = utf8mb4
+skip-name-resolve
