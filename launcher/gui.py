@@ -25,7 +25,7 @@ class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title(f"ACBuilds Launcher {L.VERSION}")
-        self.geometry("860x600")
+        self.geometry("900x640")
         self.minsize(640, 480)
         self.q = queue.Queue()
         self.busy = False
@@ -52,23 +52,30 @@ class App(tk.Tk):
         ttk.Label(f, text="The first account created becomes the server admin.", foreground="#666").grid(
             row=4, column=1, sticky="w", padx=6)
 
-        bar = ttk.Frame(f)
-        bar.grid(row=5, column=0, columnspan=3, pady=10, sticky="w")
         self.buttons = []
-        for text, fn in [("Install && Play".replace("&&", "&"), self.do_install_play), ("Play only", self.do_play),
-                         ("Backup", self.do_backup), ("Update", self.do_update), ("Stop server", self.do_stop),
-                         ("Uninstall server + DB", self.do_uninstall)]:
-            b = ttk.Button(bar, text=text, command=fn)
-            b.pack(side="left", padx=(0, 6))
-            self.buttons.append(b)
+        rows_of_buttons = [
+            [("Install & Play", self.do_install_play), ("Play only", self.do_play), ("Stop server", self.do_stop),
+             ("Backup", self.do_backup), ("Update", self.do_update)],
+            [("Install server only", lambda: self.do_install("server")), ("Install database only", lambda: self.do_install("db")),
+             ("Uninstall server", lambda: self.do_uninstall("server")),
+             ("Uninstall database (+backup)", lambda: self.do_uninstall("db")),
+             ("Uninstall all", lambda: self.do_uninstall("all"))],
+        ]
+        for r, row in enumerate(rows_of_buttons):
+            bar = ttk.Frame(f)
+            bar.grid(row=5 + r, column=0, columnspan=3, pady=(10 if r == 0 else 0, 4), sticky="w")
+            for text, fn in row:
+                b = ttk.Button(bar, text=text, command=fn)
+                b.pack(side="left", padx=(0, 6))
+                self.buttons.append(b)
 
         ttk.Label(f, textvariable=self.v_status, font=("Segoe UI", 10, "bold")).grid(
-            row=6, column=0, columnspan=3, sticky="w")
+            row=7, column=0, columnspan=3, sticky="w")
         self.prog = ttk.Progressbar(f, mode="indeterminate")
-        self.prog.grid(row=7, column=0, columnspan=3, sticky="ew", pady=4)
+        self.prog.grid(row=8, column=0, columnspan=3, sticky="ew", pady=4)
         self.log = scrolledtext.ScrolledText(f, height=18, state="disabled", font=("Consolas", 9))
-        self.log.grid(row=8, column=0, columnspan=3, sticky="nsew")
-        f.rowconfigure(8, weight=1)
+        self.log.grid(row=9, column=0, columnspan=3, sticky="nsew")
+        f.rowconfigure(9, weight=1)
         self.after(100, self.pump)
 
     # ---- file pickers
@@ -171,15 +178,23 @@ class App(tk.Tk):
         self.work(lambda: (L.ensure_docker(), L.compose("down")), "Server stopped.")
 
 
-    def do_uninstall(self):
-        if not messagebox.askyesno(
-                "Uninstall server + database",
-                "This removes the ACBuilds server and database from Docker: the containers, their images and the "
-                "database data.\n\nYour Asheron's Call client and DAT files are NOT touched.\n"
-                "A backup of accounts and characters is saved first (acbuilds-data\\backups) and kept.\n\nContinue?",
-                icon="warning"):
+    def do_install(self, what):
+        names = {"server": "the server only", "db": "the database only"}
+        self.work(lambda: L.cmd_install(self.args(what=what)), f"Installed {names[what]}.")
+
+    def do_uninstall(self, what):
+        text = {
+            "server": "Remove the ACBuilds SERVER container and image.\n\nThe database and its data are kept.",
+            "db": "Remove the ACBuilds DATABASE container, image and data.\n\nA backup of accounts and characters is saved first "
+                  "(acbuilds-data\\backups) and kept. The server will be stopped, because it cannot run without its database.",
+            "all": "Remove the ACBuilds server AND database (containers, images, database data).\n\nA backup of accounts and "
+                   "characters is saved first (acbuilds-data\\backups) and kept.",
+        }[what]
+        if not messagebox.askyesno("Uninstall", text + "\n\nYour Asheron's Call client and DAT files are NOT touched.\n\nContinue?",
+                                   icon="warning"):
             return
-        self.work(lambda: L.cmd_uninstall(self.args(yes=True, purge=False)), "Uninstalled. Your AC client was not touched.")
+        self.work(lambda: L.cmd_uninstall(self.args(what=what, yes=True, purge=False)),
+                  "Uninstalled. Your AC client was not touched.")
 
 
 def run_gui():
