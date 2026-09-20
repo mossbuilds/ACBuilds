@@ -19,8 +19,17 @@ case "$ARG" in
   "") MODE=""; SHA="main" ;;
   *) [[ "$ARG" =~ ^[0-9a-f]{40}$ ]] || { echo "refusing unexpected argument"; exit 2; }; MODE=""; SHA="$ARG" ;;
 esac
+# Fresh VPS: install Docker through the one root-owned script this user may sudo, then continue with the docker group active.
+if ! command -v docker >/dev/null 2>&1; then
+  echo "== Docker is not installed: installing"
+  sudo -n /usr/local/sbin/acbuilds-install-docker
+  exec 9>&-   # release the lock so the re-executed copy can take it
+  exec sg docker -c "$APP/deploy.sh ${ARG:-}"
+fi
+docker info >/dev/null 2>&1 || { echo "ERROR: user $(whoami) cannot talk to Docker (not in the docker group yet? reconnect and retry)"; exit 1; }
 DC="docker compose -f $APP/docker-compose.yml"
 mkdir -p backups dats mods mods-vr content
+
 
 echo "== compose file from commit $SHA"
 curl -fsSL "https://raw.githubusercontent.com/mossbuilds/ACBuilds/$SHA/deploy/vps/docker-compose.yml" -o docker-compose.yml.new

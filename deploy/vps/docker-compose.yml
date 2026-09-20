@@ -1,6 +1,7 @@
 # ACBuilds on the VPS: ONE shared database, two game servers.
 #   ace-server     stock ACE       UDP 9000/9001   (normal game)
 #   ace-vr-server  VR-enabled ACE  UDP 9100/9101   (Thwargle/ACE fork, for AC:VR)
+# BIND_IP (in /opt/acbuilds/.env) is 127.0.0.1 until the owner account exists, then 0.0.0.0 to open the game to the internet.
 # Both servers use the same ace-db (shared accounts AND characters, as requested "for now").
 # WARNING: two live world servers writing one shard database can clash if the SAME character is logged in on both at once.
 # Log a character into only one server at a time. If that becomes a problem, give the VR server its own database.
@@ -22,8 +23,8 @@ services:
     depends_on:
       ace-db: { condition: service_healthy }
     ports:
-      - "9000:9000/udp"
-      - "9001:9001/udp"
+      - "${BIND_IP:-0.0.0.0}:9000:9000/udp"
+      - "${BIND_IP:-0.0.0.0}:9001:9001/udp"
     volumes:
       - ${DATS_DIR:-/opt/acbuilds/dats}:/ace/Dats:ro
       - /opt/acbuilds/mods:/ace/Mods
@@ -35,8 +36,8 @@ services:
     depends_on:
       ace-db: { condition: service_healthy }
     ports:
-      - "9100:9000/udp"
-      - "9101:9001/udp"
+      - "${BIND_IP:-0.0.0.0}:9100:9000/udp"
+      - "${BIND_IP:-0.0.0.0}:9101:9001/udp"
     volumes:
       - ${DATS_DIR:-/opt/acbuilds/dats}:/ace/Dats:ro
       - /opt/acbuilds/mods-vr:/ace/Mods
