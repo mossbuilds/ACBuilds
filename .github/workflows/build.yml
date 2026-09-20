@@ -229,17 +229,25 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: gh release upload "${{ needs.check.outputs.version }}" "${{ matrix.asset }}" --clobber
 
-  # Auto-deploy to the VPS after a successful publish. Off until the repo variable VPS_DEPLOY is 'true'.
+  # Auto-deploy to the VPS after a successful publish. Off until VPS_DEPLOY (secret or variable) is 'true'.
   # The deploy key can only run /opt/acbuilds/deploy.sh (SSH forced command); that script backs up the database FIRST.
   deploy:
     needs: [check, build]
-    if: needs.check.outputs.build == 'true' && vars.VPS_DEPLOY == 'true'
+    if: needs.check.outputs.build == 'true'
     runs-on: ubuntu-latest
     concurrency:
       group: vps-deploy
       cancel-in-progress: false
+    # VPS_DEPLOY can be a repository secret OR a repository variable (secrets cannot be read in a job-level 'if', so it is
+    # copied into the environment here and checked per step).
+    env:
+      DEPLOY_ON: ${{ secrets.VPS_DEPLOY || vars.VPS_DEPLOY }}
     steps:
+      - name: Skipped (VPS_DEPLOY is not 'true')
+        if: env.DEPLOY_ON != 'true'
+        run: echo "VPS auto-deploy is off. Set VPS_DEPLOY=true (secret or variable) to enable it."
       - name: Deploy over SSH (pinned host key)
+        if: env.DEPLOY_ON == 'true'
         shell: bash
         env:
           KEY: ${{ secrets.VPS_SSH_KEY }}

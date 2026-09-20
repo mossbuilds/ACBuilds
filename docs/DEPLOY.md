@@ -21,7 +21,7 @@ Both servers use **one shared database** for now.
 
 ## GitHub settings the deploy job needs
 Repository secrets (Settings > Secrets and variables > Actions): `VPS_HOST`, `VPS_USER` (= `acbuilds`), `VPS_SSH_KEY` (private deploy key), `VPS_KNOWN_HOSTS` (the pinned SSH host key line for the VPS).
-Repository variable: `VPS_DEPLOY` = `true` (the job is skipped until this is set).
+`VPS_DEPLOY` = `true`, as a repository secret or variable (the deploy step is skipped until it is set).
 
 ## One-time VPS setup (root)
 `bash deploy/vps/bootstrap.sh "<deploy public key>"` installs Docker if missing, creates the `acbuilds` user, opens only UDP 9000-9001 and 9100-9101 in ufw, installs `deploy.sh` and authorizes the deploy key. Then copy the DAT files to `/opt/acbuilds/dats` and run the first deploy.
