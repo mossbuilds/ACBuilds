@@ -50,6 +50,8 @@ class App(tk.Tk):
         self.v_status = tk.StringVar(value="Ready.")
         self.v_retail_msg = tk.StringVar()
         self.v_openac_msg = tk.StringVar()
+        self.v_acvr = tk.StringVar(value=cfg.get("acvr_path") or (str(L.find_acvr()) if L.find_acvr() else ""))
+        self.v_acvr_msg = tk.StringVar()
 
         f = ttk.Frame(self, padding=12)
         f.pack(fill="both", expand=True)
@@ -67,6 +69,8 @@ class App(tk.Tk):
                         command=self.show_panel).pack(side="left")
         ttk.Radiobutton(rb, text="OpenAC (open-source client)", variable=self.v_ctype, value="openac",
                         command=self.show_panel).pack(side="left", padx=18)
+        ttk.Radiobutton(rb, text="AC:VR (PC VR, SteamVR)", variable=self.v_ctype, value="acvr",
+                        command=self.show_panel).pack(side="left")
 
         holder = ttk.Frame(s1)
         holder.grid(row=1, column=0, sticky="ew", pady=(8, 0))
@@ -104,6 +108,23 @@ class App(tk.Tk):
             row=3, column=0, columnspan=2, sticky="w", pady=(4, 0))
         self.lbl_openac = self.pan_openac.grid_slaves(row=3, column=0)[0]
 
+        # -- AC:VR panel
+        self.pan_acvr = ttk.Frame(holder)
+        self.pan_acvr.grid(row=0, column=0, sticky="ew")
+        self.pan_acvr.columnconfigure(0, weight=1)
+        ttk.Label(self.pan_acvr, justify="left", wraplength=820, text=(
+            "1. Install AC:VR (Windows PC VR setup) and connect your headset (Quest: Link or Air Link). "
+            "SteamVR must be your OpenXR runtime - the launcher checks and starts SteamVR for you.\n"
+            "2. Choose AC-VR.bat or the 'AC VR (SteamVR)' shortcut (filled in automatically if found).\n"
+            "3. Set your retail DAT folder below - the server needs it too. Account and password are entered inside AC:VR: "
+            "add a custom server 127.0.0.1, port 9000, type ACE.")).grid(row=0, column=0, columnspan=2, sticky="w")
+        link(self.pan_acvr, "Get AC:VR (community preview)", L.ACVR_URL).grid(row=1, column=0, columnspan=2, sticky="w", pady=(2, 6))
+        ttk.Entry(self.pan_acvr, textvariable=self.v_acvr).grid(row=2, column=0, sticky="ew")
+        ttk.Button(self.pan_acvr, text="Browse for AC-VR.bat...", command=self.pick_acvr).grid(row=2, column=1, padx=(6, 0))
+        tk.Label(self.pan_acvr, textvariable=self.v_acvr_msg, anchor="w", justify="left", wraplength=820, font=("Segoe UI", 9)).grid(
+            row=3, column=0, columnspan=2, sticky="w", pady=(4, 0))
+        self.lbl_acvr = self.pan_acvr.grid_slaves(row=3, column=0)[0]
+
         # -- advanced: DAT folder override
         adv = ttk.Frame(s1)
         adv.grid(row=2, column=0, sticky="ew", pady=(8, 0))
@@ -125,8 +146,8 @@ class App(tk.Tk):
         ttk.Entry(s2, textvariable=self.v_account).grid(row=0, column=1, sticky="ew", padx=6)
         ttk.Label(s2, text="Password").grid(row=1, column=0, sticky="w", pady=2)
         ttk.Entry(s2, textvariable=self.v_password, show="*").grid(row=1, column=1, sticky="ew", padx=6)
-        ttk.Label(s2, text="The first account created becomes the server admin. The password is never saved.",
-                  foreground="#666").grid(row=2, column=1, sticky="w", padx=6)
+        self.v_acct_hint = tk.StringVar()
+        ttk.Label(s2, textvariable=self.v_acct_hint, foreground="#666").grid(row=2, column=1, sticky="w", padx=6)
 
         # ---------------- buttons
         self.buttons = []
@@ -157,19 +178,23 @@ class App(tk.Tk):
         self.log.grid(row=r, column=0, sticky="nsew")
         f.rowconfigure(r, weight=1)
 
-        for v in (self.v_client, self.v_openac, self.v_ctype, self.v_dats):
+        for v in (self.v_client, self.v_openac, self.v_ctype, self.v_dats, self.v_acvr):
             v.trace_add("write", lambda *_: self.refresh_msgs())
         self.show_panel()
         self.after(100, self.pump)
 
     # ---- panels and live validation
     def show_panel(self):
-        if self.v_ctype.get() == "retail":
-            self.pan_openac.grid_remove()
-            self.pan_retail.grid()
-        else:
-            self.pan_retail.grid_remove()
-            self.pan_openac.grid()
+        kind = self.v_ctype.get()
+        for name, pan in (("retail", self.pan_retail), ("openac", self.pan_openac), ("acvr", self.pan_acvr)):
+            if name == kind:
+                pan.grid()
+            else:
+                pan.grid_remove()
+        self.v_acct_hint.set("Not used for AC:VR - you enter the account inside AC:VR's own login screen." if kind == "acvr" else
+                             "The first account created becomes the server admin. The password is never saved.")
+        if kind == "acvr":
+            self.v_adv.set(True)  # AC:VR does not tell us where your DAT files are; the server needs them
         if self.v_adv.get():
             self.adv_row.grid()
         else:
@@ -198,6 +223,7 @@ class App(tk.Tk):
         else:
             self.v_retail_msg.set("Client found, but no client_*.dat files next to it. Tick Advanced below to choose the DAT folder.")
             self.lbl_retail.configure(fg=BAD)
+        self.refresh_acvr()
         found = L.find_openac(self.v_openac.get().strip() or None)
         if found:
             self.v_openac_msg.set(f"OK - OpenAC found ({found[0].name}). DAT files: {found[1]}"
@@ -208,10 +234,24 @@ class App(tk.Tk):
                                   else "Choose the folder with AcDream.App.exe.")
             self.lbl_openac.configure(fg=BAD if self.v_openac.get().strip() else "#555")
 
+    def refresh_acvr(self):
+        f = L.find_acvr(self.v_acvr.get().strip() or None)
+        rt = L.openxr_runtime()
+        if f:
+            extra = "" if (rt and "steam" in rt.lower()) else " - but SteamVR is not the active OpenXR runtime yet"
+            self.v_acvr_msg.set(f"OK - AC:VR found ({f.name}){extra}")
+            self.lbl_acvr.configure(fg=OK if not extra else BAD)
+        else:
+            self.v_acvr_msg.set("AC:VR not found. Install it, then Browse to AC-VR.bat or the 'AC VR (SteamVR)' shortcut."
+                                if not self.v_acvr.get().strip() else "Not found: that path does not exist.")
+            self.lbl_acvr.configure(fg="#555" if not self.v_acvr.get().strip() else BAD)
+
     def dats_dir(self):
         """Folder mounted into the server as /ace/Dats: explicit override, else derived from the chosen client."""
         if self.v_adv.get() and self.v_dats.get().strip():
             return self.v_dats.get().strip()
+        if self.v_ctype.get() == "acvr":
+            return None  # only an explicit DAT folder counts
         if self.v_ctype.get() == "openac":
             found = L.find_openac(self.v_openac.get().strip() or None)
             return found[1] if found else None
@@ -228,6 +268,12 @@ class App(tk.Tk):
         p = filedialog.askdirectory(title="Folder with AcDream.App.exe (your OpenAC install)")
         if p:
             self.v_openac.set(p)
+
+    def pick_acvr(self):
+        p = filedialog.askopenfilename(title="Select AC-VR.bat (or the AC VR (SteamVR) shortcut)",
+                                       filetypes=[("AC:VR launcher", "*.bat *.exe *.lnk"), ("All", "*.*")])
+        if p:
+            self.v_acvr.set(p)
 
     def pick_dats(self):
         p = filedialog.askdirectory(title="Folder with client_cell_1.dat, client_portal.dat, ...")
@@ -260,7 +306,8 @@ class App(tk.Tk):
         a = argparse.Namespace(dats=self.dats_dir(), client=self.v_client.get().strip() or None,
                                account=self.v_account.get() or None, password=self.v_password.get() or None,
                                no_client=False, all=False, what="all", file=None,
-                               client_type=self.v_ctype.get(), openac_dir=self.v_openac.get().strip() or None)
+                               client_type=self.v_ctype.get(), openac_dir=self.v_openac.get().strip() or None,
+                               acvr_path=self.v_acvr.get().strip() or None)
         for k, v in extra.items():
             setattr(a, k, v)
         return a
@@ -268,7 +315,7 @@ class App(tk.Tk):
     def remember(self):
         cfg = L.load_cfg()
         cfg.update(client=self.v_client.get().strip(), account=self.v_account.get(), client_type=self.v_ctype.get(),
-                   openac_dir=self.v_openac.get().strip(),
+                   openac_dir=self.v_openac.get().strip(), acvr_path=self.v_acvr.get().strip(),
                    dats=self.v_dats.get().strip() if self.v_adv.get() else "")
         L.save_cfg(cfg)
 
@@ -301,6 +348,17 @@ class App(tk.Tk):
 
     # ---- actions
     def need_client(self):
+        if self.v_ctype.get() == "acvr":
+            if not L.find_acvr(self.v_acvr.get().strip() or None):
+                if messagebox.askyesno("AC:VR not found", "Could not find AC:VR. Choose AC-VR.bat or the 'AC VR (SteamVR)' "
+                                       "shortcut in Step 1, or open the AC:VR download page?"):
+                    webbrowser.open(L.ACVR_URL)
+                return False
+            if not self.v_dats.get().strip():
+                messagebox.showinfo("ACBuilds", "Choose your retail DAT folder in Step 1 - the server needs your "
+                                                "client_*.dat files.")
+                return False
+            return True
         if self.v_ctype.get() == "openac":
             if not L.find_openac(self.v_openac.get().strip() or None):
                 if messagebox.askyesno("OpenAC not found",
@@ -329,11 +387,11 @@ class App(tk.Tk):
         return True
 
     def do_install_play(self):
-        if self.need_client() and self.need_account():
+        if self.need_client() and (self.v_ctype.get() == "acvr" or self.need_account()):
             self.work(lambda: L.cmd_up(self.args()), "Done. The game should be starting.")
 
     def do_play(self):
-        if self.need_client() and self.need_account():
+        if self.need_client() and (self.v_ctype.get() == "acvr" or self.need_account()):
             self.work(lambda: L.cmd_play(self.args()), "Done.")
 
     def do_backup(self):

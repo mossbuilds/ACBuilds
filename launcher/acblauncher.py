@@ -29,6 +29,9 @@ REGISTRY = "ghcr.io/mossbuilds"
 AC_CLIENT_HELP = "https://www.accpp.net/manual-installation"
 # OpenAC: MIT-licensed open-source client that talks to ACE. Ships no game data - you still supply your own DAT files.
 OPENAC_URL = "https://github.com/eriknihlen/OpenAC/releases/latest"
+# AC:VR (Thwargle): Unreal-based PC VR / Quest client. Own login screen; needs your DAT files; VR combat needs a VR-enabled ACE server.
+ACVR_URL = "http://thwargle.com/unreal-vr/#pc-vr"
+STEAMVR_RUN = "steam://rungameid/250820"
 DB_PASS = ("ace", "ace-local")  # internal-only credential, see config/Config.js
 
 COMPOSE = f"""name: acbuilds
@@ -220,11 +223,107 @@ def launch_openac(a, account, password, host="127.0.0.1"):
     return True
 
 
+def find_acvr(hint=None):
+    """Locate an installed AC:VR launcher: a .bat/.exe/.lnk. Returns a Path or None. Windows only (PC VR)."""
+    cands = []
+    for c in (hint, load_cfg().get("acvr_path")):
+        if c:
+            cands.append(Path(str(c)).expanduser())
+    for c in cands:
+        if c.is_file():
+            return c
+        if c.is_dir():
+            for pat in ("AC-VR.bat", "AC VR*.lnk", "*VR*.exe"):
+                m = sorted(c.glob(pat))
+                if m:
+                    return m[0]
+    if IS_WIN:
+        roots = [Path(os.environ.get("APPDATA", "")) / "Microsoft/Windows/Start Menu/Programs",
+                 Path(os.environ.get("ProgramData", "")) / "Microsoft/Windows/Start Menu/Programs",
+                 Path.home() / "Desktop", Path(os.environ.get("PUBLIC", "")) / "Desktop"]
+        for r in roots:
+            if r.exists():
+                for lnk in r.rglob("*.lnk"):
+                    n = lnk.name.lower().replace("-", " ")
+                    if "ac vr" in n and "steamvr" in n.replace(" ", ""):
+                        return lnk
+        for base in (os.environ.get("ProgramFiles"), os.environ.get("LOCALAPPDATA"), "C:/", "D:/Games"):
+            if not base:
+                continue
+            for name in ("AC-Unreal", "AC Unreal", "ACUnreal", "AC-VR"):
+                d = Path(base) / name
+                if d.is_dir() and (d / "AC-VR.bat").exists():
+                    return d / "AC-VR.bat"
+    return None
+
+
+def openxr_runtime():
+    """Path of the active OpenXR runtime json (Windows), or None."""
+    if not IS_WIN:
+        return None
+    try:
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Khronos\OpenXR\1") as k:
+            return winreg.QueryValueEx(k, "ActiveRuntime")[0]
+    except Exception:
+        return None
+
+
+def vr_running():
+    r = run(["tasklist"], check=False, capture=True)
+    return "vrserver.exe" in (r.stdout or "").lower()
+
+
+def launch_acvr(a):
+    exe = find_acvr(getattr(a, "acvr_path", None))
+    if not exe:
+        print(f"AC:VR not found. Install it from {ACVR_URL} (PC VR / SteamVR), then pick its AC-VR.bat or "
+              "'AC VR (SteamVR)' shortcut (--acvr-path).")
+        return False
+    if not IS_WIN:
+        print("AC:VR PC VR is Windows only.")
+        return False
+    rt = openxr_runtime()
+    if not rt or "steam" not in rt.lower():
+        print("WARNING: SteamVR is not the active OpenXR runtime (SteamVR > Settings > OpenXR > 'Set SteamVR as OpenXR runtime'). "
+              "AC:VR would open as a flat window.")
+    if not vr_running():
+        print("Starting SteamVR (connect your headset first: Meta Link / Air Link for a Quest)...")
+        try:
+            os.startfile(STEAMVR_RUN)
+        except Exception as e:
+            print(f"Could not start SteamVR automatically ({e}); start it yourself and wait for the headset + controllers.")
+        for _ in range(45):
+            if vr_running():
+                break
+            time.sleep(2)
+        print("SteamVR is up. Wait until the headset and both controllers show as connected.")
+    cfg = load_cfg()
+    cfg.update(acvr_path=str(exe))
+    save_cfg(cfg)
+    print(f"Starting AC:VR: {exe.name}")
+    try:
+        os.startfile(str(exe))  # works for .bat, .exe and .lnk
+    except Exception as e:
+        print(f"Could not start AC:VR: {e}")
+        return False
+    ip = lan_ip()
+    print("\nIn AC:VR's login screen add a custom server:  host 127.0.0.1 (this PC)  port 9000  type ACE")
+    print(f"(from another device on your network use {ip}); then add your account and press Launch.")
+    print("Note: VR combat/tracked hands need the VR-enabled ACE server; stock ACE supports login and normal play.")
+    return True
+
+
 def launch_client(a, host="127.0.0.1"):
     """Start the chosen client (retail acclient.exe or OpenAC) pointed at our server. The choice is remembered."""
     cfg = load_cfg()
     interactive = sys.stdin is not None and sys.stdin.isatty()
     ctype = getattr(a, "client_type", None) or cfg.get("client_type") or "retail"
+    if ctype == "acvr":  # AC:VR has its own login screen; nothing to pass
+        cfg.update(client_type=ctype)
+        save_cfg(cfg)
+        launch_acvr(a)
+        return
     path = None
     if ctype == "retail":
         path = getattr(a, "client", None) or cfg.get("client")
@@ -463,8 +562,9 @@ def main():
             s.add_argument("--dats")
             s.add_argument("--no-client", action="store_true", help="do not offer to start the game")
         s.add_argument("--client", help="path to acclient.exe (or its folder); remembered for next time")
-        s.add_argument("--client-type", choices=["retail", "openac"], help="which game client to start (remembered)")
+        s.add_argument("--client-type", choices=["retail", "openac", "acvr"], help="which game client to start (remembered)")
         s.add_argument("--openac-dir", help="folder of your OpenAC install (auto-detected if omitted)")
+        s.add_argument("--acvr-path", help="AC:VR launcher (AC-VR.bat, the AC VR (SteamVR) shortcut, or its folder)")
         s.add_argument("--account"); s.add_argument("--password")
     sub.add_parser("down"); sub.add_parser("status"); sub.add_parser("logs"); sub.add_parser("version")
     un = sub.add_parser("uninstall", help="remove the server, the database or both (never the AC client)")
