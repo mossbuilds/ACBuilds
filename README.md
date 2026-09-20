@@ -59,16 +59,19 @@ Built into the server image: [CustomClothingBase](https://github.com/OptimShi/Cu
 
 ## Self-contained launcher (no Python needed)
 
-Every release has a single-file program that does what `run.*` and `acb.*` do: installs Docker if missing, starts both containers, prints the IP and port, and handles backup/restore/update.
+Every release has a single-file program with a **window**: pick your `acclient.exe`, type an account and password, click **Install & Play**. It installs Docker if missing, downloads and starts the server and database containers, waits for the world to open, then starts Asheron's Call. It also has Backup, Update and Stop buttons. (Windows: Docker Desktop may ask for a restart; reopen the launcher afterwards and click again.)
 
 | OS | Download from the release |
 |---|---|
-| Windows | `acbuilds-windows-x64.exe` |
+| Windows | `acbuilds-windows-x64.exe` (double-click) |
 | Linux | `acbuilds-linux-x64` (then `chmod +x`) |
 | macOS (Apple silicon) | `acbuilds-macos-arm64` (then `chmod +x`) |
 
+Terminal use (any arguments skip the window):
+
 ```
-acbuilds                 # start (put your DAT files in acbuilds-data/dats, or pass --dats DIR)
+acbuilds up [--dats DIR] [--client PATH --account NAME --password PW]   # install, start, launch the game
+acbuilds play            # just start the game against the running server
 acbuilds backup [--all]
 acbuilds restore FILE.sql.gz
 acbuilds update [server|db|all]

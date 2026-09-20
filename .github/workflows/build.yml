@@ -152,7 +152,7 @@ jobs:
         run: |
           pip install pyinstaller
           echo 'VERSION = "${{ needs.check.outputs.version }}"' > launcher/_version.py
-          cd launcher && pyinstaller --onefile --name acbuilds --paths . acblauncher.py
+          cd launcher && pyinstaller --onefile --name acbuilds --paths . --hidden-import gui acblauncher.py
           cp dist/${{ matrix.dist }} ../${{ matrix.asset }}
       - name: Attach to release
         shell: bash

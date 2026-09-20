@@ -2,7 +2,7 @@
 """ACBuilds launcher: one self-contained program (Windows / macOS / Linux) that installs Docker if needed,
 starts the ACE server + database containers, and prints the IP:port to connect to. Also backup / restore / update.
 
-  acbuilds            start everything (same as `up`)
+  acbuilds            open the GUI (Install & Play); in a terminal without a display: same as `up`
   acbuilds up [--dats DIR]
   acbuilds down | status | logs
   acbuilds backup [--all]           accounts + characters (ace_auth, ace_shard); --all adds ace_world
@@ -12,7 +12,7 @@ starts the ACE server + database containers, and prints the IP:port to connect t
 
 Stdlib only. Files live in ./acbuilds-data next to where you run it (compose file, backups/, dats/, mods/, content/).
 """
-import argparse, datetime, gzip, os, platform, shutil, socket, subprocess, sys, time
+import argparse, datetime, getpass, gzip, json, os, platform, shutil, socket, subprocess, sys, time
 from pathlib import Path
 
 try:
@@ -50,12 +50,24 @@ volumes:
   ace-db:
 """
 
-DATA = Path.cwd() / "acbuilds-data"
+# next to the exe when frozen (double-click safe), else the current folder
+DATA = (Path(sys.executable).parent if getattr(sys, "frozen", False) else Path.cwd()) / "acbuilds-data"
 IS_WIN, IS_MAC = platform.system() == "Windows", platform.system() == "Darwin"
 
 
 def run(cmd, check=True, capture=False, stdin=None, env=None):
-    return subprocess.run(cmd, check=check, text=not stdin, capture_output=capture, stdin=stdin, env=env)
+    flags = 0x08000000 if IS_WIN else 0  # CREATE_NO_WINDOW: no console flashes when running from the GUI
+    if capture or stdin:
+        return subprocess.run(cmd, check=check, text=not stdin, capture_output=capture, stdin=stdin, env=env, creationflags=flags)
+    # stream the output line by line through print() (shown live in both the terminal and the GUI log)
+    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors="replace",
+                         env=env, creationflags=flags)
+    for line in p.stdout:
+        print(line, end="", flush=True)
+    rc = p.wait()
+    if check and rc != 0:
+        raise subprocess.CalledProcessError(rc, cmd)
+    return subprocess.CompletedProcess(cmd, rc)
 
 
 def have(cmd):
@@ -67,6 +79,7 @@ def docker_ok():
 
 
 def ensure_docker():
+    print("[1/4] Checking Docker...")
     if not have("docker"):
         print("Docker not found - installing...")
         if IS_WIN:
@@ -127,17 +140,90 @@ def lan_ip():
         return "127.0.0.1"
 
 
+CONFIG = DATA / "config.json"
+
+
+def load_cfg():
+    try:
+        return json.loads(CONFIG.read_text())
+    except Exception:
+        return {}
+
+
+def save_cfg(cfg):
+    DATA.mkdir(exist_ok=True)
+    CONFIG.write_text(json.dumps(cfg, indent=2))
+
+
+def wait_open(timeout=240):
+    """Block until ACE logs that the world is open, so the client does not launch into a closed server."""
+    print("Waiting for the server to open the world...", end="", flush=True)
+    end = time.time() + timeout
+    while time.time() < end:
+        r = run(["docker", "logs", "ace-server"], check=False, capture=True)
+        if "World is now open" in (r.stdout or "") + (r.stderr or ""):
+            print(" open.")
+            return True
+        print(".", end="", flush=True)
+        time.sleep(4)
+    print(" timed out (the server may still be starting).")
+    return False
+
+
+def launch_client(a, host="127.0.0.1"):
+    """Ask for the acclient.exe path once (remembered), then start the game pointed at our server."""
+    cfg = load_cfg()
+    interactive = sys.stdin is not None and sys.stdin.isatty()
+    path = getattr(a, "client", None) or cfg.get("client")
+    if not path and interactive and not getattr(a, "no_client", False):
+        path = input("\nPath to acclient.exe (Enter to skip launching the game): ").strip().strip('"')
+    if not path:
+        return
+    path = str(Path(path).expanduser())
+    if Path(path).is_dir():
+        path = str(Path(path) / "acclient.exe")
+    if not Path(path).exists():
+        print(f"Client not found: {path}")
+        return
+    account = getattr(a, "account", None) or cfg.get("account")
+    if not account and interactive:
+        account = input("Account name (new names are created automatically): ").strip()
+    password = getattr(a, "password", None) or (getpass.getpass("Password: ") if interactive else None)
+    if not account or not password:
+        print("Need an account and password to start the game (use --account / --password).")
+        return
+    cfg.update(client=path, account=account)  # the password is never saved
+    save_cfg(cfg)
+    cmd = [path, "-h", f"{host}:9000", "-a", account, "-v", password]
+    if not IS_WIN and path.lower().endswith(".exe"):
+        if not have("wine"):
+            print("Install Wine to run acclient.exe on this OS, then run `acbuilds play`.")
+            return
+        cmd = ["wine"] + cmd
+    print(f"Starting Asheron's Call: {Path(path).name} -> {host}:9000 as {account}")
+    subprocess.Popen(cmd, cwd=str(Path(path).parent))
+
+
+def cmd_play(a):
+    ensure_docker()
+    wait_open()
+    launch_client(a)
+
+
 def cmd_up(a):
     ensure_docker()
-    dats = Path(a.dats).expanduser().resolve() if a.dats else DATA / "dats"
+    dats_arg = getattr(a, "dats", None) or load_cfg().get("dats")
+    dats = Path(dats_arg).expanduser().resolve() if dats_arg else DATA / "dats"
     dats.mkdir(parents=True, exist_ok=True)
     for d in ("mods", "content", "backups"):
         (DATA / d).mkdir(exist_ok=True)
     if not list(dats.glob("client_*.dat")):
         sys.exit(f"Put your AC client DAT files (client_cell_1.dat, client_portal.dat, client_highres.dat, "
                  f"client_local_English.dat) in:\n  {dats}\nthen run again (or pass --dats DIR).")
+    print("[2/4] Downloading the server and database images (first time is a few hundred MB)...")
     if compose("pull", check=False, dats=dats).returncode != 0:
         sys.exit("Could not pull the images (are you online, and are the ghcr.io/mossbuilds packages public?).")
+    print("[3/4] Starting the server and database...")
     compose("up", "-d", dats=dats)
     ip = lan_ip()
     print("\n" + "=" * 46)
@@ -147,6 +233,10 @@ def cmd_up(a):
     print("  Client example: acclient.exe -h 127.0.0.1:9000 -a <account> -v <password>")
     print("  Any new account name auto-creates; the FIRST account becomes admin.")
     print("=" * 46)
+    if not getattr(a, "no_client", False):
+        print("[4/4] Waiting for the world to open, then starting Asheron's Call...")
+        wait_open()
+        launch_client(a)
 
 
 def dexec(args, stdin=None, capture=False):
@@ -218,11 +308,24 @@ def cmd_update(a):
 def main():
     ap = argparse.ArgumentParser(prog="acbuilds", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd")
-    u = sub.add_parser("up"); u.add_argument("--dats")
+    for name in ("up", "play"):
+        s = sub.add_parser(name)
+        if name == "up":
+            s.add_argument("--dats")
+            s.add_argument("--no-client", action="store_true", help="do not offer to start the game")
+        s.add_argument("--client", help="path to acclient.exe (or its folder); remembered for next time")
+        s.add_argument("--account"); s.add_argument("--password")
     sub.add_parser("down"); sub.add_parser("status"); sub.add_parser("logs"); sub.add_parser("version")
     b = sub.add_parser("backup"); b.add_argument("--all", action="store_true")
     r = sub.add_parser("restore"); r.add_argument("file")
     up = sub.add_parser("update"); up.add_argument("what", nargs="?", default="all", choices=["server", "db", "all"])
+    if len(sys.argv) == 1:
+        try:
+            if IS_WIN or IS_MAC or os.environ.get("DISPLAY"):
+                from gui import run_gui
+                return run_gui()
+        except Exception as e:  # no tkinter / no display: fall back to the terminal flow
+            print(f"(GUI unavailable: {e})")
     a = ap.parse_args()
     a.cmd = a.cmd or "up"
     if a.cmd == "up" and not hasattr(a, "dats"):
@@ -231,6 +334,8 @@ def main():
         print(f"acbuilds launcher {VERSION}")
     elif a.cmd == "up":
         cmd_up(a)
+    elif a.cmd == "play":
+        cmd_play(a)
     elif a.cmd == "down":
         ensure_docker(); compose("down")
     elif a.cmd == "status":
@@ -252,5 +357,3 @@ if __name__ == "__main__":
         sys.exit(130)
     except subprocess.CalledProcessError as e:
         sys.exit(f"Command failed ({e.returncode}): {' '.join(map(str, e.cmd))}")
-    if IS_WIN and getattr(sys, "frozen", False) and len(sys.argv) == 1:
-        input("\nPress Enter to close...")  # double-clicked: keep the window open
