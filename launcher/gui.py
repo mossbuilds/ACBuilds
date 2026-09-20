@@ -48,6 +48,9 @@ class App(tk.Tk):
         self.v_account = tk.StringVar(value=cfg.get("account", ""))
         self.v_password = tk.StringVar()
         self.v_status = tk.StringVar(value="Ready.")
+        self.v_remote = tk.BooleanVar(value=bool(cfg.get("remote")))
+        self.v_host = tk.StringVar(value=cfg.get("remote_host", L.DEFAULT_REMOTE_HOST))
+        self.v_port = tk.StringVar(value=str(cfg.get("remote_port", 9000)))
         self.v_retail_msg = tk.StringVar()
         self.v_openac_msg = tk.StringVar()
         self.v_acvr = tk.StringVar(value=cfg.get("acvr_path") or (str(L.find_acvr()) if L.find_acvr() else ""))
@@ -117,7 +120,7 @@ class App(tk.Tk):
             "SteamVR must be your OpenXR runtime - the launcher checks and starts SteamVR for you.\n"
             "2. Choose AC-VR.bat or the 'AC VR (SteamVR)' shortcut (filled in automatically if found).\n"
             "3. Set your retail DAT folder below - the server needs it too. Account and password are entered inside AC:VR: "
-            "add a custom server 127.0.0.1, port 9000, type ACE.")).grid(row=0, column=0, columnspan=2, sticky="w")
+            "add a custom server (127.0.0.1 or your remote host), port 9100 = the PC VR server, type ACE.")).grid(row=0, column=0, columnspan=2, sticky="w")
         link(self.pan_acvr, "Get AC:VR (community preview)", L.ACVR_URL).grid(row=1, column=0, columnspan=2, sticky="w", pady=(2, 6))
         ttk.Entry(self.pan_acvr, textvariable=self.v_acvr).grid(row=2, column=0, sticky="ew")
         ttk.Button(self.pan_acvr, text="Browse for AC-VR.bat...", command=self.pick_acvr).grid(row=2, column=1, padx=(6, 0))
@@ -146,6 +149,19 @@ class App(tk.Tk):
         ttk.Entry(s2, textvariable=self.v_account).grid(row=0, column=1, sticky="ew", padx=6)
         ttk.Label(s2, text="Password").grid(row=1, column=0, sticky="w", pady=2)
         ttk.Entry(s2, textvariable=self.v_password, show="*").grid(row=1, column=1, sticky="ew", padx=6)
+        srv = ttk.Frame(s2)
+        srv.grid(row=3, column=0, columnspan=2, sticky="w", pady=(8, 0))
+        ttk.Radiobutton(srv, text="Play on this PC (my own Docker server)", variable=self.v_remote, value=False,
+                        command=self.show_panel).pack(side="left")
+        ttk.Radiobutton(srv, text="Play on a remote server:", variable=self.v_remote, value=True,
+                        command=self.show_panel).pack(side="left", padx=(16, 4))
+        self.e_host = ttk.Entry(srv, textvariable=self.v_host, width=26)
+        self.e_host.pack(side="left")
+        ttk.Label(srv, text="port").pack(side="left", padx=(6, 2))
+        self.e_port = ttk.Entry(srv, textvariable=self.v_port, width=6)
+        self.e_port.pack(side="left")
+        ttk.Label(s2, text="Ports on the public server: 9000 = normal game, 9100 = PC VR server. Remote play needs no Docker.",
+                  foreground="#666").grid(row=4, column=1, sticky="w", padx=6)
         self.v_acct_hint = tk.StringVar()
         ttk.Label(s2, textvariable=self.v_acct_hint, foreground="#666").grid(row=2, column=1, sticky="w", padx=6)
 
@@ -193,6 +209,13 @@ class App(tk.Tk):
                 pan.grid()
             else:
                 pan.grid_remove()
+        remote = self.v_remote.get()
+        for e in (self.e_host, self.e_port):
+            e.state(["!disabled"] if remote else ["disabled"])
+        if remote and kind == "acvr" and self.v_port.get().strip() == "9000":
+            self.v_port.set("9100")
+        elif remote and kind != "acvr" and self.v_port.get().strip() == "9100":
+            self.v_port.set("9000")
         self.v_acct_hint.set("Not used for AC:VR - you enter the account inside AC:VR's own login screen." if kind == "acvr" else
                              "The first account created becomes the server admin. The password is never saved.")
         if kind == "acvr":
@@ -309,7 +332,8 @@ class App(tk.Tk):
                                account=self.v_account.get() or None, password=self.v_password.get() or None,
                                no_client=False, all=False, what="all", file=None,
                                client_type=self.v_ctype.get(), openac_dir=self.v_openac.get().strip() or None,
-                               acvr_path=self.v_acvr.get().strip() or None)
+                               acvr_path=self.v_acvr.get().strip() or None,
+                               server=(f"{self.v_host.get().strip()}:{self.v_port.get().strip() or 9000}" if self.v_remote.get() else None))
         for k, v in extra.items():
             setattr(a, k, v)
         return a
@@ -318,6 +342,7 @@ class App(tk.Tk):
         cfg = L.load_cfg()
         cfg.update(client=self.v_client.get().strip(), account=self.v_account.get(), client_type=self.v_ctype.get(),
                    openac_dir=self.v_openac.get().strip(), acvr_path=self.v_acvr.get().strip(),
+                   remote=self.v_remote.get(), remote_host=self.v_host.get().strip(), remote_port=self.v_port.get().strip(),
                    dats=self.v_dats.get().strip() if self.v_adv.get() else "")
         L.save_cfg(cfg)
 
@@ -356,7 +381,7 @@ class App(tk.Tk):
                                        "shortcut in Step 1, or open the AC:VR download page?"):
                     webbrowser.open(L.ACVR_URL)
                 return False
-            if not self.v_dats.get().strip():
+            if not self.v_remote.get() and not self.v_dats.get().strip():
                 messagebox.showinfo("ACBuilds", "Choose your retail DAT folder in Step 1 - the server needs your "
                                                 "client_*.dat files.")
                 return False
@@ -376,7 +401,7 @@ class App(tk.Tk):
                                        "Open the install guide in your browser?"):
                     webbrowser.open(L.AC_CLIENT_HELP)
                 return False
-        if not self.dats_dir():
+        if not self.v_remote.get() and not self.dats_dir():
             messagebox.showinfo("ACBuilds", "Could not find your client_*.dat files. Tick 'Advanced' in Step 1 and choose "
                                             "the folder that contains them.")
             return False

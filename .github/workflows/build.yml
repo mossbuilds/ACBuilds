@@ -228,3 +228,26 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release upload "${{ needs.check.outputs.version }}" "${{ matrix.asset }}" --clobber
+
+  # Auto-deploy to the VPS after a successful publish. Off until the repo variable VPS_DEPLOY is 'true'.
+  # The deploy key can only run /opt/acbuilds/deploy.sh (SSH forced command); that script backs up the database FIRST.
+  deploy:
+    needs: [check, build]
+    if: needs.check.outputs.build == 'true' && vars.VPS_DEPLOY == 'true'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: vps-deploy
+      cancel-in-progress: false
+    steps:
+      - name: Deploy over SSH (pinned host key)
+        shell: bash
+        env:
+          KEY: ${{ secrets.VPS_SSH_KEY }}
+          KNOWN: ${{ secrets.VPS_KNOWN_HOSTS }}
+          HOST: ${{ secrets.VPS_HOST }}
+          USER_: ${{ secrets.VPS_USER }}
+        run: |
+          install -m 600 /dev/null "$RUNNER_TEMP/key"; printf '%s\n' "$KEY" > "$RUNNER_TEMP/key"
+          printf '%s\n' "$KNOWN" > "$RUNNER_TEMP/known_hosts"
+          ssh -i "$RUNNER_TEMP/key" -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$RUNNER_TEMP/known_hosts" \
+              "$USER_@$HOST" "${{ github.sha }}"

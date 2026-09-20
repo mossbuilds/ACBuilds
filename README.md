@@ -102,3 +102,7 @@ acbuilds status | logs | down | version
 ```
 
 Source: `launcher/acblauncher.py` (Python standard library only; run it with `python launcher/acblauncher.py` on any system).
+
+## Public server on the VPS (ace.mossbuilds.xyz)
+
+The same images run on the project VPS: **`ace.mossbuilds.xyz` port 9000 = normal game, port 9100 = PC VR server**, both on one shared database. In the launcher choose **Play on a remote server**, keep the host, and set the port (the launcher switches to 9100 when you pick AC:VR). Remote play needs no Docker on your PC: `acbuilds play --server ace.mossbuilds.xyz:9000`. How the VPS is set up and auto-deployed (database backup first, then deploy) is in [docs/DEPLOY.md](docs/DEPLOY.md).

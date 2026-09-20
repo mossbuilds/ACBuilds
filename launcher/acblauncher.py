@@ -89,6 +89,7 @@ volumes:
 networks:
   vr:
 """
+DEFAULT_REMOTE_HOST = "ace.mossbuilds.xyz"  # the public ACBuilds VPS: 9000 = normal game, 9100 = PC VR server
 VR_PORT = 9100  # the VR-enabled ACE server (Thwargle/ACE fork) listens here; the stock server stays on 9000
 
 # next to the exe when frozen (double-click safe), else the current folder
@@ -234,7 +235,16 @@ def find_openac(hint=None):
     return None
 
 
-def launch_openac(a, account, password, host="127.0.0.1"):
+def parse_server(a, ctype="retail"):
+    """(host, port, remote) from --server HOST[:PORT]; default is this PC's own Docker server."""
+    s = (getattr(a, "server", None) or "").strip()
+    if not s:
+        return "127.0.0.1", (VR_PORT if ctype == "acvr" else 9000), False
+    host, _, port = s.partition(":")
+    return host or DEFAULT_REMOTE_HOST, int(port) if port.isdigit() else (VR_PORT if ctype == "acvr" else 9000), True
+
+
+def launch_openac(a, account, password, host="127.0.0.1", port=9000):
     found = find_openac(getattr(a, "openac_dir", None))
     if not found:
         print(f"OpenAC not found. Install it from {OPENAC_URL} (run its launcher once so it prepares your data files),\n"
@@ -242,11 +252,11 @@ def launch_openac(a, account, password, host="127.0.0.1"):
         return False
     exe, dat, pak = found
     env = dict(os.environ)
-    env.update(ACDREAM_DAT_DIR=dat, ACDREAM_LIVE="1", ACDREAM_TEST_HOST=host, ACDREAM_TEST_PORT="9000",
+    env.update(ACDREAM_DAT_DIR=dat, ACDREAM_LIVE="1", ACDREAM_TEST_HOST=host, ACDREAM_TEST_PORT=str(port),
                ACDREAM_TEST_USER=account, ACDREAM_TEST_PASS=password)
     if pak:
         env["ACDREAM_PAK_PATH"] = pak
-    print(f"Starting OpenAC: {exe.name} -> {host}:9000 as {account}")
+    print(f"Starting OpenAC: {exe.name} -> {host}:{port} as {account}")
     subprocess.Popen([str(exe)], cwd=str(exe.parent), env=env)
     cfg = load_cfg()
     cfg.update(openac_dir=str(exe.parent))
@@ -305,7 +315,7 @@ def vr_running():
     return "vrserver.exe" in (r.stdout or "").lower()
 
 
-def launch_acvr(a):
+def launch_acvr(a, host="127.0.0.1", port=VR_PORT, remote=False):
     exe = find_acvr(getattr(a, "acvr_path", None))
     if not exe:
         print(f"AC:VR not found. Install it from {ACVR_URL} (PC VR / SteamVR), then pick its AC-VR.bat or "
@@ -339,21 +349,27 @@ def launch_acvr(a):
         print(f"Could not start AC:VR: {e}")
         return False
     ip = lan_ip()
-    print(f"\nIn AC:VR's login screen add a custom server:  host 127.0.0.1 (this PC)  port {VR_PORT}  type ACE")
+    print(f"\nIn AC:VR's login screen add a custom server:  host {host}{'' if remote else ' (this PC)'}  port {port}  type ACE")
     print(f"(from another device on your network use {ip}); then add your account and press Launch.")
-    print("This is the VR-enabled ACE server (a second server; the stock one on port 9000 is untouched).")
+    print("This is the VR-enabled ACE server (a second server; the stock one on port 9000 is untouched)." if port == VR_PORT else
+          "Note: port 9000 is the stock server; the VR-enabled server is on port 9100.")
     return True
 
 
-def launch_client(a, host="127.0.0.1"):
+def launch_client(a, host="127.0.0.1", port=None):
     """Start the chosen client (retail acclient.exe or OpenAC) pointed at our server. The choice is remembered."""
     cfg = load_cfg()
     interactive = sys.stdin is not None and sys.stdin.isatty()
     ctype = getattr(a, "client_type", None) or cfg.get("client_type") or "retail"
+    shost, sport, remote = parse_server(a, ctype)
+    if remote:
+        host, port = shost, sport
+    elif port is None:
+        port = 9000 if ctype != "acvr" else VR_PORT
     if ctype == "acvr":  # AC:VR has its own login screen; nothing to pass
         cfg.update(client_type=ctype)
         save_cfg(cfg)
-        launch_acvr(a)
+        launch_acvr(a, host, port, remote)
         return
     path = None
     if ctype == "retail":
@@ -380,19 +396,22 @@ def launch_client(a, host="127.0.0.1"):
         cfg.update(client=path)
     save_cfg(cfg)
     if ctype == "openac":
-        launch_openac(a, account, password, host)
+        launch_openac(a, account, password, host, port)
         return
-    cmd = [path, "-h", f"{host}:9000", "-a", account, "-v", password]
+    cmd = [path, "-h", f"{host}:{port}", "-a", account, "-v", password]
     if not IS_WIN and path.lower().endswith(".exe"):
         if not have("wine"):
             print("Install Wine to run acclient.exe on this OS, then run `acbuilds play`.")
             return
         cmd = ["wine"] + cmd
-    print(f"Starting Asheron's Call: {Path(path).name} -> {host}:9000 as {account}")
+    print(f"Starting Asheron's Call: {Path(path).name} -> {host}:{port} as {account}")
     subprocess.Popen(cmd, cwd=str(Path(path).parent))
 
 
 def cmd_play(a):
+    if getattr(a, "server", None):  # a remote server (e.g. ace.mossbuilds.xyz): nothing to install or wait for
+        launch_client(a)
+        return
     ensure_docker()
     if (getattr(a, "client_type", None) or load_cfg().get("client_type")) == "acvr":
         wait_open(container="ace-vr-server")
@@ -532,6 +551,9 @@ def cmd_uninstall(a):
 
 
 def cmd_up(a):
+    if getattr(a, "server", None):
+        launch_client(a)
+        return
     ensure_docker()
     dats_arg = getattr(a, "dats", None) or load_cfg().get("dats")
     dats = Path(dats_arg).expanduser().resolve() if dats_arg else DATA / "dats"
@@ -658,6 +680,7 @@ def main():
         s.add_argument("--openac-dir", help="folder of your OpenAC install (auto-detected if omitted)")
         s.add_argument("--acvr-path", help="AC:VR launcher (AC-VR.bat, the AC VR (SteamVR) shortcut, or its folder)")
         s.add_argument("--account"); s.add_argument("--password")
+        s.add_argument("--server", metavar="HOST[:PORT]", help=f"play on a remote server instead of this PC's Docker, e.g. {DEFAULT_REMOTE_HOST}:9000 (normal) or :9100 (PC VR)")
     sub.add_parser("down"); sub.add_parser("status"); sub.add_parser("logs"); sub.add_parser("version")
     un = sub.add_parser("uninstall", help="remove the server, the database or both (never the AC client)")
     un.add_argument("what", nargs="?", default="all", choices=["server", "db", "all", "vr"])

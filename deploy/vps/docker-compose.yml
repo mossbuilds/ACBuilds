@@ -1,0 +1,45 @@
+# ACBuilds on the VPS: ONE shared database, two game servers.
+#   ace-server     stock ACE       UDP 9000/9001   (normal game)
+#   ace-vr-server  VR-enabled ACE  UDP 9100/9101   (Thwargle/ACE fork, for AC:VR)
+# Both servers use the same ace-db (shared accounts AND characters, as requested "for now").
+# WARNING: two live world servers writing one shard database can clash if the SAME character is logged in on both at once.
+# Log a character into only one server at a time. If that becomes a problem, give the VR server its own database.
+name: acbuilds
+services:
+  ace-db:
+    image: ghcr.io/mossbuilds/acbuilds-db:${ACB_TAG:-latest}
+    container_name: ace-db
+    restart: unless-stopped
+    environment:
+      INNODB_BUFFER_POOL_SIZE: ${INNODB_BUFFER_POOL_SIZE:-1G}
+    volumes:
+      - ace-db:/var/lib/mysql
+    # 3306 is NOT published: only the game servers can reach the database.
+  ace-server:
+    image: ghcr.io/mossbuilds/acbuilds-server:${ACB_TAG:-latest}
+    container_name: ace-server
+    restart: unless-stopped
+    depends_on:
+      ace-db: { condition: service_healthy }
+    ports:
+      - "9000:9000/udp"
+      - "9001:9001/udp"
+    volumes:
+      - ${DATS_DIR:-/opt/acbuilds/dats}:/ace/Dats:ro
+      - /opt/acbuilds/mods:/ace/Mods
+      - /opt/acbuilds/content:/ace/Content
+  ace-vr-server:
+    image: ghcr.io/mossbuilds/acbuilds-vr-server:${ACB_TAG:-latest}
+    container_name: ace-vr-server
+    restart: unless-stopped
+    depends_on:
+      ace-db: { condition: service_healthy }
+    ports:
+      - "9100:9000/udp"
+      - "9101:9001/udp"
+    volumes:
+      - ${DATS_DIR:-/opt/acbuilds/dats}:/ace/Dats:ro
+      - /opt/acbuilds/mods-vr:/ace/Mods
+      - /opt/acbuilds/content:/ace/Content
+volumes:
+  ace-db:
