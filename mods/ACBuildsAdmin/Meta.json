@@ -1,0 +1,10 @@
+{
+  "Name": "ACBuildsAdmin",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "Console-only admin commands for ACBuilds: spawn an object next to an online player, and report where players are.",
+  "Version": "1.0.0",
+  "Enabled": true,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}

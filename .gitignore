@@ -1,6 +1,7 @@
 dats/
 backups/
-mods/
+/mods/*
+!/mods/ACBuildsAdmin/
 content/
 .build.log
 launcher/_version.py
