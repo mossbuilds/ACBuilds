@@ -1,7 +1,7 @@
 # VPS deployment (ace.mossbuilds.xyz)
 
 Public address: **`ace.mossbuilds.xyz`** - port **9000** = normal game (stock ACE), port **9100** = PC VR server (Thwargle/ACE fork).
-Both servers use **one shared database** for now.
+Both servers use **one MariaDB**: `ace_auth` (accounts, so one login works on both) and `ace_world` are shared, but each server has its **own shard** (`ace_shard` for stock, `ace_shard_vr` for VR: characters and items). The shard cannot be shared: each server hands out object IDs from its own counter, so a shared shard fails with `Duplicate entry ... for key PRIMARY` as soon as a character or item is created on the second server.
 
 ## What runs where
 | Piece | Location |
@@ -10,7 +10,7 @@ Both servers use **one shared database** for now.
 | Database | Docker volume `acbuilds_ace-db` (MariaDB container `ace-db`, port 3306 NOT published) |
 | Servers | `ace-server` UDP 9000/9001, `ace-vr-server` UDP 9100/9101 |
 | AC DAT files | `/opt/acbuilds/dats` (`client_portal.dat`, `client_cell_1.dat`, `client_local_English.dat`; mounted read-only) |
-| Backups | `/opt/acbuilds/backups/ace-<time>.sql.gz` (accounts + characters), the newest 14 are kept |
+| Backups | `/opt/acbuilds/backups/ace-<time>.sql.gz` (`ace_auth`, `ace_shard` and `ace_shard_vr`), the newest 14 are kept |
 | Deploy script | `/opt/acbuilds/deploy.sh` |
 
 ## What happens on an update
@@ -29,6 +29,6 @@ Repository secrets (Settings > Secrets and variables > Actions): `VPS_HOST`, `VP
 ## Safety notes
 - **First account = admin.** ACE makes the first account created on an empty database an administrator. Create the owner account BEFORE the ports are opened to the internet.
 - Account auto-creation stays on (that is how players get accounts); anyone on the internet can create an account.
-- **Shared database:** two live world servers writing one shard database can clash if the same character is logged in on both at once. Log a character into only one server at a time; if it becomes a problem the VR server gets its own database.
+- **Characters are per server:** a character made on port 9000 exists only on the stock server; make a separate one on 9100. The account (`tom`, admin) works on both.
 - **Rollback:** restore a backup with `gunzip -c backups/<file> | docker exec -i ace-db mariadb -h127.0.0.1 -uace -pace-local`, and pin older images with `ACB_TAG=<release tag>` (see the Releases page).
 - The DNS record for `ace.mossbuilds.xyz` must be **DNS only** (not proxied) so UDP reaches the VPS.

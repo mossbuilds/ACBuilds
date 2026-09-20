@@ -45,16 +45,34 @@ echo "== compose file from commit $SHA"
 curl -fsSL "https://raw.githubusercontent.com/mossbuilds/ACBuilds/$SHA/deploy/vps/docker-compose.yml" -o docker-compose.yml.new
 docker compose -f docker-compose.yml.new config -q && mv docker-compose.yml.new docker-compose.yml
 
+echo "== VR server config (own shard database ace_shard_vr)"
+curl -fsSL "https://raw.githubusercontent.com/mossbuilds/ACBuilds/$SHA/config/Config.js" -o config.js.new
+sed '/"Shard":/ s/"Database": *"ace_shard"/"Database": "ace_shard_vr"/' config.js.new > config-vr.js
+rm -f config.js.new
+grep -q '"ace_shard_vr"' config-vr.js || { echo "ERROR: could not derive the VR config"; exit 1; }
+
 ls dats/client_portal.dat dats/client_cell_1.dat dats/client_local_English.dat >/dev/null 2>&1 \
   || { echo "ERROR: AC DAT files missing in $APP/dats (client_portal.dat, client_cell_1.dat, client_local_English.dat)"; exit 1; }
 
+DBR="docker exec ace-db mariadb -uroot"        # root over the container's unix socket (never exposed)
 backup() {
   if ! docker inspect -f '{{.State.Running}}' ace-db 2>/dev/null | grep -q true; then echo "== no running database yet: nothing to back up (first deploy)"; return 0; fi
+  local dbs; dbs=$($DBR -N -e "SELECT GROUP_CONCAT(schema_name SEPARATOR ' ') FROM information_schema.schemata WHERE schema_name IN ('ace_auth','ace_shard','ace_shard_vr')")
   local f="backups/ace-$(date +%Y%m%d-%H%M%S).sql.gz"
-  docker exec ace-db mariadb-dump -h127.0.0.1 -uace -pace-local --single-transaction --databases ace_auth ace_shard | gzip > "$f"
+  docker exec ace-db mariadb-dump -uroot --single-transaction --databases $dbs | gzip > "$f"
   if ! gzip -t "$f" || [ "$(gunzip -c "$f" | wc -c)" -lt 1000 ]; then rm -f "$f"; echo "BACKUP FAILED - deploy aborted, nothing changed"; exit 1; fi
-  echo "== backup ok: $f ($(du -h "$f" | cut -f1))"; LAST_BACKUP="$f"
+  echo "== backup ok: $f ($(du -h "$f" | cut -f1)) databases: $dbs"; LAST_BACKUP="$f"
   ls -1t backups/ace-*.sql.gz 2>/dev/null | tail -n +$((KEEP + 1)) | xargs -r rm -f
+}
+
+# The VR server has its own shard database inside the same MariaDB (accounts + world stay shared). Created once; idempotent.
+ensure_vr_shard() {
+  $DBR -e "CREATE DATABASE IF NOT EXISTS ace_shard_vr; GRANT ALL ON ace_shard_vr.* TO 'ace'@'%'; FLUSH PRIVILEGES;"
+  local n; n=$($DBR -N -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='ace_shard_vr'")
+  if [ "$n" = "0" ]; then
+    echo "== creating the VR shard schema (structure copied from ace_shard)"
+    docker exec ace-db mariadb-dump -uroot --no-data ace_shard | docker exec -i ace-db mariadb -uroot ace_shard_vr
+  fi
 }
 
 wait_open() {
@@ -75,11 +93,13 @@ if [ "$MODE" = "--recreate-db" ]; then
   docker volume rm acbuilds_ace-db
   $DC up -d ace-db
   until [ "$(docker inspect -f '{{.State.Health.Status}}' ace-db)" = healthy ]; do sleep 3; done
-  gunzip -c "$LAST_BACKUP" | docker exec -i ace-db mariadb -h127.0.0.1 -uace -pace-local
+  gunzip -c "$LAST_BACKUP" | docker exec -i ace-db mariadb -uroot
 fi
 echo "== restarting"
-$DC up -d --remove-orphans
+$DC up -d ace-db
 until [ "$(docker inspect -f '{{.State.Health.Status}}' ace-db)" = healthy ]; do sleep 3; done
+ensure_vr_shard
+$DC up -d --remove-orphans
 wait_open ace-server
 wait_open ace-vr-server
 docker image prune -f >/dev/null
