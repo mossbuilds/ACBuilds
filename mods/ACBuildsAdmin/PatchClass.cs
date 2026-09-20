@@ -7,6 +7,9 @@ using ACE.Server.Factories;
 using ACE.Server.Managers;
 using ACE.Entity.Enum;
 using ACE.Server.Network;
+using ACE.Server.Network.Structure;
+using ACE.Server.Physics;
+using ACE.Server.Physics.Common;
 using ACE.Server.Network.GameMessages.Messages;
 using ACE.Server.WorldObjects;
 using ACE.Shared.Mods;
@@ -178,6 +181,44 @@ public class PatchClass(BasicMod mod, string settingsName = "Settings.json") : B
                 catch (Exception ex) { ModManager.Log($"{Tag} warp tick: {ex.Message}", ModManager.LogLevel.Warn); }
             }).EnqueueChain();
         }
+    }
+
+    // ---- /leap: Hulk jump. Launches the player along a ballistic arc; fall damage is suppressed for the flight. ----
+    [CommandHandler("leap", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld, 0, "Hulk leap: launch yourself in an arc in the direction you face (be standing still on the ground). /leap [power 0.2-1.0, default 1] - range about 250 units at 1.0", "[power]")]
+    public static void HandleLeap(Session session, params string[] parameters)
+    {
+        var player = session?.Player;
+        if (player == null) return;
+        var power = 1f;
+        if (parameters.Length > 0 && !float.TryParse(parameters[0], out power))
+        {
+            session.Network.EnqueueSend(new GameMessageSystemChat("Usage: /leap [power 0.2-1.0]", ChatMessageType.Broadcast));
+            return;
+        }
+        power = Math.Clamp(power, 0.2f, 1f);
+        var v = 35f * power;                    // 45 degrees, speed ~49.5 < the 50 cap; range about v*v/gravity*... ~250 at 1.0
+        var wasInvincible = player.Invincible;
+        new ActionChain(player, () =>
+        {
+            var po = player.PhysicsObj;
+            if (po == null) return;
+            player.Invincible = true;           // the landing would otherwise do ~150 fall damage
+            po.TransientState &= ~(TransientStateFlags.Contact | TransientStateFlags.WaterContact);
+            po.calc_acceleration();
+            po.set_on_walkable(false);
+            po.set_local_velocity(new System.Numerics.Vector3(0, v, v), false);
+            po.MovementManager?.MotionInterpreter?.PendingMotions.Clear();
+            po.IsAnimating = false;
+            var movementData = new MovementData(player) { IsAutonomous = true, MovementType = MovementType.Invalid };
+            movementData.Invalid = new MovementInvalid(movementData);
+            player.EnqueueBroadcast(new GameMessageUpdateMotion(player, movementData));
+            player.EnqueueBroadcast(new GameMessageVectorUpdate(player));
+            ModManager.Log($"{Tag} leap {player.Name} v={v}");
+        }).EnqueueChain();
+        var restore = new ActionChain(player, () => { });
+        restore.AddDelaySeconds(15);
+        restore.AddAction(player, () => { player.Invincible = wasInvincible; });
+        restore.EnqueueChain();
     }
 
     private static string Describe(Player p)
