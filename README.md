@@ -8,6 +8,17 @@ This project only provides the **server and database**. You install the game cli
 
 **Alternative client: [OpenAC](https://github.com/eriknihlen/OpenAC/releases/latest)** (MIT-licensed, open source, cross-platform, made for ACE servers). It ships no game data either, so you still supply your own `client_*.dat` files. It needs a Vulkan 1.3 capable GPU, and it is beta software. Point it at this server (`127.0.0.1`, port `9000`) the same way as the retail client. The ACBuilds launcher can start it for you: in the window pick **Play with: OpenAC** (it auto-detects your install and prepared data package), or on the command line use `acbuilds up --client-type openac` / `acbuilds play --client-type openac`. Switch back any time with `--client-type retail`.
 
+## Playing in VR (AC:VR, PC VR or native Quest)
+
+There is an existing community VR client, **AC:VR** by Thwargle: <http://thwargle.com/unreal-vr/> (PC VR through SteamVR, or native Quest 3). It is a separate download, it needs your own retail DAT files, and it connects to ACE servers, including ours.
+
+1. Install AC:VR from the link above (Windows setup for PC VR; the Quest installer for a standalone headset).
+2. Start our server (`acbuilds` launcher, or `docker compose up -d`).
+3. In AC:VR's login screen add a custom server: host = `127.0.0.1` (same PC) or this PC's LAN IP (native Quest, over Wi-Fi), port `9000`, type **ACE**. Add an account and press Launch.
+4. Note from the AC:VR authors: tracked hands/head, physical combat and VR-aimed spells need their **VR-enabled ACE server**. A stock ACE server (which is what the ACBuilds image builds today) supports login and normal play, not those extensions. Ask in their Discord for the VR-enabled server source if you want the full experience.
+
+The ACBuilds launcher does not start AC:VR for you yet.
+
 ## Quick start (auto-installs Docker if missing)
 
 Put your AC client DAT files (`client_cell_1.dat`, `client_portal.dat`, `client_highres.dat`, `client_local_English.dat`) in a `dats/` folder next to the script, then:
