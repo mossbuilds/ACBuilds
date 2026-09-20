@@ -22,6 +22,10 @@ RUN chmod +x /build-mod.sh && echo "mods rev: $MODS_REV" && mkdir -p /mods /mods
  && git clone --depth 1 https://github.com/OptimShi/CustomClothingBase && /build-mod.sh CustomClothingBase /modsrc/CustomClothingBase \
  && git clone --depth 1 https://github.com/ACEmulator/ACE.Mods.WebAPI && /build-mod.sh ACE.Web /modsrc/ACE.Mods.WebAPI/Templates/ACE.Web
 
+# Our own mod, kept in this repo (mods/ACBuildsAdmin): console-only commands whereis / spawnnear. Same build script and same skip-on-failure rule.
+COPY mods/ACBuildsAdmin /modsrc/ACBuildsAdmin
+RUN /build-mod.sh ACBuildsAdmin /modsrc/ACBuildsAdmin
+
 # ---- stage 3: runtime ----
 FROM mcr.microsoft.com/dotnet/runtime:10.0-noble
 ARG ACE_REF

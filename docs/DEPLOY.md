@@ -47,3 +47,8 @@ Both game servers accept ACE console commands from a named pipe, so content tool
     docker exec ace-server sh -c 'echo "clearcache" > /ace/console.in'    # output appears in: docker logs ace-server
 
 Only someone who can already run `docker exec` (root / docker group) can use it; it is not reachable from the network. `stop-now` ends the server and the container exits (Docker then restarts it).
+
+## ACBuildsAdmin mod (console-only commands)
+`mods/ACBuildsAdmin` is our own ACE mod, built into both server images (Dockerfile.server mods stage) and refreshed on every container start. It adds `whereis [player]`
+and `spawnnear <wcid> <player>` to the server console (flag ConsoleInvoke: players cannot run them in game). Used by the Moss `ac-creator` skill to put content next to a player.
+Try it: `docker exec ace-vr-server sh -c "echo 'whereis' > /ace/console.in"` then `docker logs --tail 5 ace-vr-server`.

@@ -6,6 +6,8 @@ for i in $(seq 1 120); do (echo > /dev/tcp/$DBHOST/3306) 2>/dev/null && break; s
 ls /ace/Dats/client_*.dat >/dev/null 2>&1 || echo "WARNING: no client_*.dat in /ace/Dats - mount your AC DAT files there or ACE.Server will exit."
 # Seed baked-in mods into the (possibly user-mounted) Mods folder; existing mods and their settings are never overwritten.
 mkdir -p /ace/Mods && cp -rn /opt/mods/. /ace/Mods/ 2>/dev/null || true
+# Mods we own are refreshed from the image on every start (the line above never overwrites, so upgrades would otherwise be ignored).
+[ -d /opt/mods/ACBuildsAdmin ] && mkdir -p /ace/Mods/ACBuildsAdmin && cp -rf /opt/mods/ACBuildsAdmin/. /ace/Mods/ACBuildsAdmin/ || true
 cd /ace
 
 # ACE reads its admin console from stdin. With no TTY it would spin and flood the log, so stdin is fed from a named pipe that
