@@ -15,7 +15,7 @@ Both servers use **one shared database** for now.
 
 ## What happens on an update
 1. GitHub builds and publishes new images (this already happens automatically, including when `ACEmulator/ACE` or `Thwargle/ACE` change).
-2. The workflow's `deploy` job connects to the VPS with a dedicated SSH key whose only permission is to run `deploy.sh` (SSH forced command, `restrict`: no shell, no forwarding). If Docker is missing, `deploy.sh` installs it through a root-owned script that the deploy user may `sudo` (only that script), then continues.
+2. The workflow's `deploy` job connects to the VPS with a dedicated SSH key whose only permission is to run `deploy.sh` (SSH forced command, `restrict`: no shell, no forwarding). On every deploy `deploy.sh` also runs a root-owned script (the only thing the deploy user may `sudo`) that installs Docker if it is missing and upgrades it when a newer version is available.
 3. `deploy.sh`: fetches the compose file for that commit, **backs up the database first** (verified with `gzip -t` and a size check; if the backup fails nothing is changed), pulls the new images, restarts the two servers, waits until both report "World is now open".
 4. The database *image* is **not** swapped automatically (its volume persists, so a new image alone would not change the data). To apply a new world-data image: run `deploy.sh --recreate-db` on the VPS (backs up, replaces the database with the new pre-seeded one, restores accounts and characters).
 

@@ -19,14 +19,24 @@ case "$ARG" in
   "") MODE=""; SHA="main" ;;
   *) [[ "$ARG" =~ ^[0-9a-f]{40}$ ]] || { echo "refusing unexpected argument"; exit 2; }; MODE=""; SHA="$ARG" ;;
 esac
-# Fresh VPS: install Docker through the one root-owned script this user may sudo, then continue with the docker group active.
-if ! command -v docker >/dev/null 2>&1; then
-  echo "== Docker is not installed: installing"
-  sudo -n /usr/local/sbin/acbuilds-install-docker
+# Docker: the pipeline installs it if missing and upgrades it when a newer version exists, through the ONE root-owned script this
+# user may sudo. A fresh install re-executes under the docker group (a new group only applies to new sessions).
+FRESH=0; command -v docker >/dev/null 2>&1 || FRESH=1
+sudo -n /usr/local/sbin/acbuilds-install-docker
+if [ "$FRESH" = 1 ]; then
   exec 9>&-   # release the lock so the re-executed copy can take it
   exec sg docker -c "$APP/deploy.sh ${ARG:-}"
 fi
-docker info >/dev/null 2>&1 || { echo "ERROR: user $(whoami) cannot talk to Docker (not in the docker group yet? reconnect and retry)"; exit 1; }
+for _ in $(seq 1 30); do docker info >/dev/null 2>&1 && break; sleep 2; done   # an upgrade briefly restarts the daemon
+docker info >/dev/null 2>&1 || { echo "ERROR: user $(whoami) cannot talk to Docker"; exit 1; }
+if [ -z "${ACB_SELF_UPDATED:-}" ] && [ "$SHA" != "main" ]; then
+  if curl -fsSL "https://raw.githubusercontent.com/mossbuilds/ACBuilds/$SHA/deploy/vps/deploy.sh" -o "$APP/deploy.sh.new" && ! cmp -s "$APP/deploy.sh.new" "$APP/deploy.sh"; then
+    echo "== deploy.sh updated from commit $SHA; restarting with it"
+    chmod 755 "$APP/deploy.sh.new"; mv "$APP/deploy.sh.new" "$APP/deploy.sh"
+    exec 9>&-; ACB_SELF_UPDATED=1 exec "$APP/deploy.sh" "$ARG"
+  fi
+  rm -f "$APP/deploy.sh.new"
+fi
 DC="docker compose -f $APP/docker-compose.yml"
 mkdir -p backups dats mods mods-vr content
 
