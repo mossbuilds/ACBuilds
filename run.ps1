@@ -1,7 +1,9 @@
 # ACBuilds one-shot launcher for Windows: installs Docker Desktop if missing, pulls + runs the image, prints where to connect.
 # Usage: .\run.ps1 [-Dats C:\path\to\dats]    (folder with client_cell_1.dat, client_portal.dat, client_highres.dat, client_local_English.dat)
 param([string]$Dats = (Join-Path $PWD 'dats'))
-$ErrorActionPreference = 'Stop'
+# 'Continue', not 'Stop': docker writes harmless warnings to stderr (e.g. "No blkio throttle...") and Stop would abort on them.
+# Real failures are caught through $LASTEXITCODE below.
+$ErrorActionPreference = 'Continue'
 
 if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
   Write-Host 'Docker not found - installing Docker Desktop (needs admin + may need a reboot)...'
@@ -24,7 +26,9 @@ if (-not (Get-ChildItem $Dats -Filter 'client_*.dat' -ErrorAction SilentlyContin
 $env:DATS_DIR = $Dats
 Set-Location $PSScriptRoot
 docker compose pull
+if ($LASTEXITCODE -ne 0) { Write-Host 'Could not pull the images (are the ghcr.io/mossbuilds packages public, and are you online?).'; exit 1 }
 docker compose up -d
+if ($LASTEXITCODE -ne 0) { Write-Host 'docker compose up failed - see the messages above.'; exit 1 }
 
 $ip = (Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.IPAddress -notlike '127.*' -and $_.IPAddress -notlike '169.254.*' -and $_.PrefixOrigin -ne 'WellKnown' } | Select-Object -First 1).IPAddress
 if (-not $ip) { $ip = '127.0.0.1' }

@@ -4,7 +4,7 @@
 #   .\acb.ps1 update [server|db|all] backup FIRST, pull new images, redeploy (db: fresh seeded DB, then your auth+shard restored)
 #   .\acb.ps1 status
 param([Parameter(Position=0)][string]$Cmd, [Parameter(Position=1)][string]$Arg, [switch]$All)
-$ErrorActionPreference = 'Stop'; Set-Location $PSScriptRoot; New-Item -ItemType Directory -Force backups | Out-Null
+$ErrorActionPreference = 'Continue'  # docker prints harmless stderr warnings; failures are checked via exit codes/throw; Set-Location $PSScriptRoot; New-Item -ItemType Directory -Force backups | Out-Null
 function Backup {
   $dbs = if ($All) { 'ace_auth ace_shard ace_world' } else { 'ace_auth ace_shard' }
   $f = "backups\ace-$(Get-Date -Format yyyyMMdd-HHmmss).sql"
