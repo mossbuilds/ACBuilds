@@ -149,6 +149,27 @@ public class PatchClass(BasicMod mod, string settingsName = "Settings.json") : B
             session.Network.EnqueueSend(new GameMessageSystemChat("That spot is blocked; move and try again.", ChatMessageType.Broadcast));
     }
 
+    [CommandHandler("clearcustom", AccessLevel.Admin, CommandHandlerFlag.ConsoleInvoke, 1, "Remove every custom object (wcid >= 900000000: NPCs, rats, generators) from the landblock that player is standing in. Temporary spawns only; permanent placements return on reload.", "<player name>")]
+    public static void HandleClearCustom(Session session, params string[] parameters)
+    {
+        var name = string.Join(" ", parameters).Trim();
+        var player = PlayerManager.GetOnlinePlayer(name);
+        if (player == null) { ModManager.Log($"{Tag} clearcustom: '{name}' is not online"); return; }
+        new ActionChain(player, () =>
+        {
+            var lb = player.CurrentLandblock;
+            if (lb == null) return;
+            var n = 0;
+            foreach (var wo in lb.GetAllWorldObjectsForDiagnostics().ToList())
+            {
+                if (wo is Player || wo.WeenieClassId < 900000000) continue;
+                wo.Destroy();
+                n++;
+            }
+            ModManager.Log($"{Tag} clearcustom: removed {n} custom object(s) from landblock 0x{lb.Id.Landblock:X4}");
+        }).EnqueueChain();
+    }
+
     private static string Describe(Player p)
     {
         var pos = p.Location;
