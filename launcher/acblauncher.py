@@ -215,8 +215,7 @@ def pull_with_retry(dats=None, tries=8):
     for i in range(1, tries + 1):
         if compose("pull", check=False, dats=dats).returncode == 0:
             return True
-        print(f"
-Download interrupted (attempt {i}/{tries}); retrying - finished layers are kept...")
+        print(f"Download interrupted (attempt {i}/{tries}); retrying - finished layers are kept...")
         time.sleep(5)
     return False
 
