@@ -1,12 +1,15 @@
 """ACBuilds launcher GUI (tkinter, ships with Python and the PyInstaller exe).
-One window: pick your acclient.exe, type an account, click 'Install & Play'. It installs Docker if needed, downloads and
-starts the server + database containers, waits for the world to open, then starts the game."""
+Step 1: pick which game client you use (original Asheron's Call, or OpenAC) and where it is installed.
+Step 2: type an account, click 'Install & Play'. It installs Docker if needed, downloads and starts the server + database
+containers, waits for the world to open, then starts the game."""
 import argparse, ctypes, queue, sys, threading, webbrowser
 import tkinter as tk
 from tkinter import filedialog, messagebox, scrolledtext, ttk
 from pathlib import Path
 
 import acblauncher as L
+
+OK, BAD = "#1a7f37", "#b42318"
 
 
 class _Writer:
@@ -21,89 +24,205 @@ class _Writer:
         pass
 
 
+def link(parent, text, url):
+    lb = tk.Label(parent, text=text, fg="#0b57d0", cursor="hand2", font=("Segoe UI", 9, "underline"))
+    lb.bind("<Button-1>", lambda _e: webbrowser.open(url))
+    return lb
+
+
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title(f"ACBuilds Launcher {L.VERSION}")
-        self.geometry("900x700")
-        self.minsize(640, 480)
+        self.geometry("920x780")
+        self.minsize(760, 620)
         self.q = queue.Queue()
         self.busy = False
         cfg = L.load_cfg()
+        self.v_ctype = tk.StringVar(value=cfg.get("client_type", "retail"))
         self.v_client = tk.StringVar(value=cfg.get("client", ""))
-        self.v_dats = tk.StringVar(value=cfg.get("dats", ""))
+        found = L.find_openac()
+        self.v_openac = tk.StringVar(value=cfg.get("openac_dir") or (str(found[0].parent) if found else ""))
+        self.v_dats = tk.StringVar(value=cfg.get("dats", ""))  # optional override
+        self.v_adv = tk.BooleanVar(value=bool(cfg.get("dats")))
         self.v_account = tk.StringVar(value=cfg.get("account", ""))
         self.v_password = tk.StringVar()
         self.v_status = tk.StringVar(value="Ready.")
-        self.v_ctype = tk.StringVar(value=cfg.get("client_type", "retail"))
-        self.v_openac = tk.StringVar(value=cfg.get("openac_dir") or (str(L.find_openac()[0].parent) if L.find_openac() else ""))
+        self.v_retail_msg = tk.StringVar()
+        self.v_openac_msg = tk.StringVar()
 
         f = ttk.Frame(self, padding=12)
         f.pack(fill="both", expand=True)
-        f.columnconfigure(1, weight=1)
-        rows = [("Asheron's Call (acclient.exe)", self.v_client, self.pick_client),
-                ("AC DAT files folder", self.v_dats, self.pick_dats)]
-        for i, (label, var, cmd) in enumerate(rows):
-            ttk.Label(f, text=label).grid(row=i, column=0, sticky="w", pady=3)
-            ttk.Entry(f, textvariable=var).grid(row=i, column=1, sticky="ew", padx=6)
-            ttk.Button(f, text="Browse...", command=cmd).grid(row=i, column=2)
-        ttk.Label(f, text="Account (new names are created)").grid(row=2, column=0, sticky="w", pady=3)
-        ttk.Entry(f, textvariable=self.v_account).grid(row=2, column=1, sticky="ew", padx=6)
-        ttk.Label(f, text="Password").grid(row=3, column=0, sticky="w", pady=3)
-        ttk.Entry(f, textvariable=self.v_password, show="*").grid(row=3, column=1, sticky="ew", padx=6)
-        ttk.Label(f, text="The first account created becomes the server admin.", foreground="#666").grid(
-            row=4, column=1, sticky="w", padx=6)
-        link = tk.Label(f, text="Don't have the Asheron's Call client? How to install it (opens in your browser)",
-                        fg="#0b57d0", cursor="hand2", font=("Segoe UI", 9, "underline"))
-        link.grid(row=4, column=0, sticky="w", pady=(6, 0))
-        link.bind("<Button-1>", lambda _e: webbrowser.open(L.AC_CLIENT_HELP))
-        link2 = tk.Label(f, text="Or use the open-source OpenAC client (you still supply your own DAT files)",
-                         fg="#0b57d0", cursor="hand2", font=("Segoe UI", 9, "underline"))
-        link2.grid(row=12, column=0, columnspan=3, sticky="w", pady=(6, 0))
-        link2.bind("<Button-1>", lambda _e: webbrowser.open(L.OPENAC_URL))
+        f.columnconfigure(0, weight=1)
+        r = 0
 
-        ttk.Label(f, text="Play with").grid(row=5, column=0, sticky="w", pady=(8, 0))
-        rb = ttk.Frame(f)
-        rb.grid(row=5, column=1, columnspan=2, sticky="w", pady=(8, 0), padx=6)
-        ttk.Radiobutton(rb, text="Retail AC client (acclient.exe)", variable=self.v_ctype, value="retail").pack(side="left")
-        ttk.Radiobutton(rb, text="OpenAC", variable=self.v_ctype, value="openac").pack(side="left", padx=12)
-        ttk.Label(f, text="OpenAC folder").grid(row=6, column=0, sticky="w", pady=3)
-        ttk.Entry(f, textvariable=self.v_openac).grid(row=6, column=1, sticky="ew", padx=6)
-        ttk.Button(f, text="Browse...", command=self.pick_openac).grid(row=6, column=2)
+        # ---------------- step 1: which client
+        s1 = ttk.LabelFrame(f, text=" Step 1 - Which Asheron's Call client do you play with? ", padding=10)
+        s1.grid(row=r, column=0, sticky="ew")
+        s1.columnconfigure(0, weight=1)
+        r += 1
+        rb = ttk.Frame(s1)
+        rb.grid(row=0, column=0, sticky="w")
+        ttk.Radiobutton(rb, text="Original Asheron's Call", variable=self.v_ctype, value="retail",
+                        command=self.show_panel).pack(side="left")
+        ttk.Radiobutton(rb, text="OpenAC (open-source client)", variable=self.v_ctype, value="openac",
+                        command=self.show_panel).pack(side="left", padx=18)
 
+        holder = ttk.Frame(s1)
+        holder.grid(row=1, column=0, sticky="ew", pady=(8, 0))
+        holder.columnconfigure(0, weight=1)
+
+        # -- original AC panel
+        self.pan_retail = ttk.Frame(holder)
+        self.pan_retail.grid(row=0, column=0, sticky="ew")
+        self.pan_retail.columnconfigure(0, weight=1)
+        ttk.Label(self.pan_retail, justify="left", wraplength=820, text=(
+            "1. Install the original game client (it is not included here).\n"
+            "2. Click Browse and select your acclient.exe. The DAT files in that same folder "
+            "(client_portal.dat, client_cell_1.dat, ...) are used automatically.")).grid(row=0, column=0, columnspan=2, sticky="w")
+        link(self.pan_retail, "How to install the original Asheron's Call client", L.AC_CLIENT_HELP).grid(
+            row=1, column=0, columnspan=2, sticky="w", pady=(2, 6))
+        ttk.Entry(self.pan_retail, textvariable=self.v_client).grid(row=2, column=0, sticky="ew")
+        ttk.Button(self.pan_retail, text="Browse for acclient.exe...", command=self.pick_client).grid(row=2, column=1, padx=(6, 0))
+        tk.Label(self.pan_retail, textvariable=self.v_retail_msg, anchor="w", justify="left", wraplength=820, font=("Segoe UI", 9)).grid(
+            row=3, column=0, columnspan=2, sticky="w", pady=(4, 0))
+        self.lbl_retail = self.pan_retail.grid_slaves(row=3, column=0)[0]
+
+        # -- OpenAC panel
+        self.pan_openac = ttk.Frame(holder)
+        self.pan_openac.grid(row=0, column=0, sticky="ew")
+        self.pan_openac.columnconfigure(0, weight=1)
+        ttk.Label(self.pan_openac, justify="left", wraplength=820, text=(
+            "1. Install OpenAC and run its own launcher once, so it prepares your data files.\n"
+            "2. Choose the folder that contains AcDream.App.exe (filled in automatically if OpenAC is found). "
+            "You still need your own game DAT files; OpenAC does not include them.")).grid(row=0, column=0, columnspan=2, sticky="w")
+        link(self.pan_openac, "Get OpenAC (GitHub releases)", L.OPENAC_URL).grid(
+            row=1, column=0, columnspan=2, sticky="w", pady=(2, 6))
+        ttk.Entry(self.pan_openac, textvariable=self.v_openac).grid(row=2, column=0, sticky="ew")
+        ttk.Button(self.pan_openac, text="Browse for OpenAC folder...", command=self.pick_openac).grid(row=2, column=1, padx=(6, 0))
+        tk.Label(self.pan_openac, textvariable=self.v_openac_msg, anchor="w", justify="left", wraplength=820, font=("Segoe UI", 9)).grid(
+            row=3, column=0, columnspan=2, sticky="w", pady=(4, 0))
+        self.lbl_openac = self.pan_openac.grid_slaves(row=3, column=0)[0]
+
+        # -- advanced: DAT folder override
+        adv = ttk.Frame(s1)
+        adv.grid(row=2, column=0, sticky="ew", pady=(8, 0))
+        adv.columnconfigure(1, weight=1)
+        ttk.Checkbutton(adv, text="Advanced: use a different DAT folder for the server", variable=self.v_adv,
+                        command=self.show_panel).grid(row=0, column=0, columnspan=3, sticky="w")
+        self.adv_row = ttk.Frame(adv)
+        self.adv_row.grid(row=1, column=0, columnspan=3, sticky="ew")
+        self.adv_row.columnconfigure(0, weight=1)
+        ttk.Entry(self.adv_row, textvariable=self.v_dats).grid(row=0, column=0, sticky="ew")
+        ttk.Button(self.adv_row, text="Browse...", command=self.pick_dats).grid(row=0, column=1, padx=(6, 0))
+
+        # ---------------- step 2: account
+        s2 = ttk.LabelFrame(f, text=" Step 2 - Your game account on this server ", padding=10)
+        s2.grid(row=r, column=0, sticky="ew", pady=(10, 0))
+        s2.columnconfigure(1, weight=1)
+        r += 1
+        ttk.Label(s2, text="Account (new names are created)").grid(row=0, column=0, sticky="w", pady=2)
+        ttk.Entry(s2, textvariable=self.v_account).grid(row=0, column=1, sticky="ew", padx=6)
+        ttk.Label(s2, text="Password").grid(row=1, column=0, sticky="w", pady=2)
+        ttk.Entry(s2, textvariable=self.v_password, show="*").grid(row=1, column=1, sticky="ew", padx=6)
+        ttk.Label(s2, text="The first account created becomes the server admin. The password is never saved.",
+                  foreground="#666").grid(row=2, column=1, sticky="w", padx=6)
+
+        # ---------------- buttons
         self.buttons = []
         rows_of_buttons = [
             [("Install & Play", self.do_install_play), ("Play only", self.do_play), ("Stop server", self.do_stop),
              ("Backup", self.do_backup), ("Update", self.do_update)],
-            [("Install server only", lambda: self.do_install("server")), ("Install database only", lambda: self.do_install("db")),
+            [("Install server only", lambda: self.do_install("server")),
+             ("Install database only", lambda: self.do_install("db")),
              ("Uninstall server", lambda: self.do_uninstall("server")),
              ("Uninstall database (+backup)", lambda: self.do_uninstall("db")),
              ("Uninstall all", lambda: self.do_uninstall("all"))],
         ]
-        for r, row in enumerate(rows_of_buttons):
+        for i, row in enumerate(rows_of_buttons):
             bar = ttk.Frame(f)
-            bar.grid(row=7 + r, column=0, columnspan=3, pady=(10 if r == 0 else 0, 4), sticky="w")
+            bar.grid(row=r, column=0, pady=(10 if i == 0 else 0, 4), sticky="w")
+            r += 1
             for text, fn in row:
                 b = ttk.Button(bar, text=text, command=fn)
                 b.pack(side="left", padx=(0, 6))
                 self.buttons.append(b)
 
-        ttk.Label(f, textvariable=self.v_status, font=("Segoe UI", 10, "bold")).grid(
-            row=9, column=0, columnspan=3, sticky="w")
+        ttk.Label(f, textvariable=self.v_status, font=("Segoe UI", 10, "bold")).grid(row=r, column=0, sticky="w")
+        r += 1
         self.prog = ttk.Progressbar(f, mode="indeterminate")
-        self.prog.grid(row=10, column=0, columnspan=3, sticky="ew", pady=4)
-        self.log = scrolledtext.ScrolledText(f, height=18, state="disabled", font=("Consolas", 9))
-        self.log.grid(row=11, column=0, columnspan=3, sticky="nsew")
-        f.rowconfigure(11, weight=1)
+        self.prog.grid(row=r, column=0, sticky="ew", pady=4)
+        r += 1
+        self.log = scrolledtext.ScrolledText(f, height=12, state="disabled", font=("Consolas", 9))
+        self.log.grid(row=r, column=0, sticky="nsew")
+        f.rowconfigure(r, weight=1)
+
+        for v in (self.v_client, self.v_openac, self.v_ctype, self.v_dats):
+            v.trace_add("write", lambda *_: self.refresh_msgs())
+        self.show_panel()
         self.after(100, self.pump)
+
+    # ---- panels and live validation
+    def show_panel(self):
+        if self.v_ctype.get() == "retail":
+            self.pan_openac.grid_remove()
+            self.pan_retail.grid()
+        else:
+            self.pan_retail.grid_remove()
+            self.pan_openac.grid()
+        if self.v_adv.get():
+            self.adv_row.grid()
+        else:
+            self.adv_row.grid_remove()
+        self.refresh_msgs()
+
+    def retail_dats(self):
+        p = self.v_client.get().strip().strip('"')
+        if p:
+            d = Path(p) if Path(p).is_dir() else Path(p).parent
+            if list(d.glob("client_*.dat")):
+                return d
+        return None
+
+    def refresh_msgs(self):
+        p = self.v_client.get().strip().strip('"')
+        if not p:
+            self.v_retail_msg.set("Choose your acclient.exe.")
+            self.lbl_retail.configure(fg="#555")
+        elif not Path(p).exists():
+            self.v_retail_msg.set("Not found: that file does not exist.")
+            self.lbl_retail.configure(fg=BAD)
+        elif self.retail_dats():
+            self.v_retail_msg.set(f"OK - client found, DAT files found in {self.retail_dats()}")
+            self.lbl_retail.configure(fg=OK)
+        else:
+            self.v_retail_msg.set("Client found, but no client_*.dat files next to it. Tick Advanced below to choose the DAT folder.")
+            self.lbl_retail.configure(fg=BAD)
+        found = L.find_openac(self.v_openac.get().strip() or None)
+        if found:
+            self.v_openac_msg.set(f"OK - OpenAC found ({found[0].name}). DAT files: {found[1]}"
+                                  + ("; prepared data package found" if found[2] else "; run OpenAC's launcher once to prepare its data"))
+            self.lbl_openac.configure(fg=OK)
+        else:
+            self.v_openac_msg.set("OpenAC not found in that folder (looking for AcDream.App.exe)." if self.v_openac.get().strip()
+                                  else "Choose the folder with AcDream.App.exe.")
+            self.lbl_openac.configure(fg=BAD if self.v_openac.get().strip() else "#555")
+
+    def dats_dir(self):
+        """Folder mounted into the server as /ace/Dats: explicit override, else derived from the chosen client."""
+        if self.v_adv.get() and self.v_dats.get().strip():
+            return self.v_dats.get().strip()
+        if self.v_ctype.get() == "openac":
+            found = L.find_openac(self.v_openac.get().strip() or None)
+            return found[1] if found else None
+        d = self.retail_dats()
+        return str(d) if d else None
 
     # ---- file pickers
     def pick_client(self):
         p = filedialog.askopenfilename(title="Select acclient.exe", filetypes=[("AC client", "acclient.exe"), ("All", "*.*")])
         if p:
             self.v_client.set(p)
-            if not self.v_dats.get() and list(Path(p).parent.glob("client_*.dat")):
-                self.v_dats.set(str(Path(p).parent))  # the retail install folder already holds the DAT files
 
     def pick_openac(self):
         p = filedialog.askdirectory(title="Folder with AcDream.App.exe (your OpenAC install)")
@@ -138,18 +257,19 @@ class App(tk.Tk):
         (self.prog.start if busy else self.prog.stop)()
 
     def args(self, **extra):
-        a = argparse.Namespace(dats=self.v_dats.get() or None, client=self.v_client.get() or None,
+        a = argparse.Namespace(dats=self.dats_dir(), client=self.v_client.get().strip() or None,
                                account=self.v_account.get() or None, password=self.v_password.get() or None,
                                no_client=False, all=False, what="all", file=None,
-                               client_type=self.v_ctype.get(), openac_dir=self.v_openac.get() or None)
+                               client_type=self.v_ctype.get(), openac_dir=self.v_openac.get().strip() or None)
         for k, v in extra.items():
             setattr(a, k, v)
         return a
 
     def remember(self):
         cfg = L.load_cfg()
-        cfg.update(client=self.v_client.get(), dats=self.v_dats.get(), account=self.v_account.get(),
-                   client_type=self.v_ctype.get(), openac_dir=self.v_openac.get())
+        cfg.update(client=self.v_client.get().strip(), account=self.v_account.get(), client_type=self.v_ctype.get(),
+                   openac_dir=self.v_openac.get().strip(),
+                   dats=self.v_dats.get().strip() if self.v_adv.get() else "")
         L.save_cfg(cfg)
 
     def work(self, fn, done_msg):
@@ -182,25 +302,29 @@ class App(tk.Tk):
     # ---- actions
     def need_client(self):
         if self.v_ctype.get() == "openac":
-            if L.find_openac(self.v_openac.get() or None):
-                return True
-            if messagebox.askyesno("OpenAC not found",
-                                   "Could not find your OpenAC install (AcDream.App.exe). Choose its folder, or open the "
-                                   "OpenAC download page?"):
-                webbrowser.open(L.OPENAC_URL)
+            if not L.find_openac(self.v_openac.get().strip() or None):
+                if messagebox.askyesno("OpenAC not found",
+                                       "Could not find your OpenAC install (AcDream.App.exe).\n\n"
+                                       "Choose its folder in Step 1, or open the OpenAC download page?"):
+                    webbrowser.open(L.OPENAC_URL)
+                return False
+        else:
+            p = self.v_client.get().strip().strip('"')
+            if not (p and Path(p).exists()):
+                if messagebox.askyesno("Asheron's Call client needed",
+                                       "Select your acclient.exe in Step 1 first.\n\nThe game client is not included. "
+                                       "Open the install guide in your browser?"):
+                    webbrowser.open(L.AC_CLIENT_HELP)
+                return False
+        if not self.dats_dir():
+            messagebox.showinfo("ACBuilds", "Could not find your client_*.dat files. Tick 'Advanced' in Step 1 and choose "
+                                            "the folder that contains them.")
             return False
-        p = self.v_client.get().strip().strip('"')
-        if p and Path(p).exists():
-            return True
-        if messagebox.askyesno("Asheron's Call client needed",
-                               "Select your acclient.exe first.\n\nThe game client is not included. "
-                               "Open the install guide in your browser?"):
-            webbrowser.open(L.AC_CLIENT_HELP)
-        return False
+        return True
 
     def need_account(self):
         if not (self.v_account.get() and self.v_password.get()):
-            messagebox.showinfo("ACBuilds", "Enter an account name and password first.")
+            messagebox.showinfo("ACBuilds", "Enter an account name and password in Step 2 first.")
             return False
         return True
 
@@ -221,10 +345,13 @@ class App(tk.Tk):
     def do_stop(self):
         self.work(lambda: (L.ensure_docker(), L.compose("down")), "Server stopped.")
 
-
     def do_install(self, what):
         names = {"server": "the server only", "db": "the database only"}
-        self.work(lambda: L.cmd_install(self.args(what=what)), f"Installed {names[what]}.")
+        if what == "db" or self.dats_dir():
+            self.work(lambda: L.cmd_install(self.args(what=what)), f"Installed {names[what]}.")
+        else:
+            messagebox.showinfo("ACBuilds", "Choose your game client in Step 1 first (the server needs to know where "
+                                            "your DAT files are).")
 
     def do_uninstall(self, what):
         text = {
