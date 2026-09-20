@@ -178,21 +178,66 @@ def wait_open(timeout=240):
     return False
 
 
+def find_openac(hint=None):
+    """Locate an installed OpenAC client (AcDream.App.exe / acdream-client). Returns (exe, dat_dir, pak) or None."""
+    local = Path(os.environ.get("LOCALAPPDATA", str(Path.home() / ".local/share"))) / "acdream"
+    install = {}
+    try:
+        install = json.loads((local / "install.json").read_text())
+    except Exception:
+        pass
+    cands = [hint, load_cfg().get("openac_dir"), install.get("datDirectory"), str(local / "app")]
+    names = ["AcDream.App.exe", "acdream-client.exe", "acdream-client", "AcDream.App"]
+    for c in filter(None, cands):
+        d = Path(str(c)).expanduser()
+        if d.is_file():
+            d = d.parent
+        for n in names:
+            if (d / n).exists():
+                dat = install.get("datDirectory") or str(d)
+                pak = install.get("preparedAssetPath")
+                return d / n, dat, (pak if pak and Path(pak).exists() else None)
+    return None
+
+
+def launch_openac(a, account, password, host="127.0.0.1"):
+    found = find_openac(getattr(a, "openac_dir", None))
+    if not found:
+        print(f"OpenAC not found. Install it from {OPENAC_URL} (run its launcher once so it prepares your data files),\n"
+              "then choose its folder (--openac-dir).")
+        return False
+    exe, dat, pak = found
+    env = dict(os.environ)
+    env.update(ACDREAM_DAT_DIR=dat, ACDREAM_LIVE="1", ACDREAM_TEST_HOST=host, ACDREAM_TEST_PORT="9000",
+               ACDREAM_TEST_USER=account, ACDREAM_TEST_PASS=password)
+    if pak:
+        env["ACDREAM_PAK_PATH"] = pak
+    print(f"Starting OpenAC: {exe.name} -> {host}:9000 as {account}")
+    subprocess.Popen([str(exe)], cwd=str(exe.parent), env=env)
+    cfg = load_cfg()
+    cfg.update(openac_dir=str(exe.parent))
+    save_cfg(cfg)
+    return True
+
+
 def launch_client(a, host="127.0.0.1"):
-    """Ask for the acclient.exe path once (remembered), then start the game pointed at our server."""
+    """Start the chosen client (retail acclient.exe or OpenAC) pointed at our server. The choice is remembered."""
     cfg = load_cfg()
     interactive = sys.stdin is not None and sys.stdin.isatty()
-    path = getattr(a, "client", None) or cfg.get("client")
-    if not path and interactive and not getattr(a, "no_client", False):
-        path = input("\nPath to acclient.exe (Enter to skip launching the game): ").strip().strip('"')
-    if not path:
-        return
-    path = str(Path(path).expanduser())
-    if Path(path).is_dir():
-        path = str(Path(path) / "acclient.exe")
-    if not Path(path).exists():
-        print(f"Client not found: {path}\nHow to install the AC client: {AC_CLIENT_HELP}")
-        return
+    ctype = getattr(a, "client_type", None) or cfg.get("client_type") or "retail"
+    path = None
+    if ctype == "retail":
+        path = getattr(a, "client", None) or cfg.get("client")
+        if not path and interactive and not getattr(a, "no_client", False):
+            path = input("\nPath to acclient.exe (Enter to skip launching the game): ").strip().strip('"')
+        if not path:
+            return
+        path = str(Path(path).expanduser())
+        if Path(path).is_dir():
+            path = str(Path(path) / "acclient.exe")
+        if not Path(path).exists():
+            print(f"Client not found: {path}\nHow to install the AC client: {AC_CLIENT_HELP}")
+            return
     account = getattr(a, "account", None) or cfg.get("account")
     if not account and interactive:
         account = input("Account name (new names are created automatically): ").strip()
@@ -200,8 +245,13 @@ def launch_client(a, host="127.0.0.1"):
     if not account or not password:
         print("Need an account and password to start the game (use --account / --password).")
         return
-    cfg.update(client=path, account=account)  # the password is never saved
+    cfg.update(account=account, client_type=ctype)  # the password is never saved
+    if path:
+        cfg.update(client=path)
     save_cfg(cfg)
+    if ctype == "openac":
+        launch_openac(a, account, password, host)
+        return
     cmd = [path, "-h", f"{host}:9000", "-a", account, "-v", password]
     if not IS_WIN and path.lower().endswith(".exe"):
         if not have("wine"):
@@ -413,6 +463,8 @@ def main():
             s.add_argument("--dats")
             s.add_argument("--no-client", action="store_true", help="do not offer to start the game")
         s.add_argument("--client", help="path to acclient.exe (or its folder); remembered for next time")
+        s.add_argument("--client-type", choices=["retail", "openac"], help="which game client to start (remembered)")
+        s.add_argument("--openac-dir", help="folder of your OpenAC install (auto-detected if omitted)")
         s.add_argument("--account"); s.add_argument("--password")
     sub.add_parser("down"); sub.add_parser("status"); sub.add_parser("logs"); sub.add_parser("version")
     un = sub.add_parser("uninstall", help="remove the server, the database or both (never the AC client)")

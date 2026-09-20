@@ -25,7 +25,7 @@ class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title(f"ACBuilds Launcher {L.VERSION}")
-        self.geometry("900x640")
+        self.geometry("900x700")
         self.minsize(640, 480)
         self.q = queue.Queue()
         self.busy = False
@@ -35,6 +35,8 @@ class App(tk.Tk):
         self.v_account = tk.StringVar(value=cfg.get("account", ""))
         self.v_password = tk.StringVar()
         self.v_status = tk.StringVar(value="Ready.")
+        self.v_ctype = tk.StringVar(value=cfg.get("client_type", "retail"))
+        self.v_openac = tk.StringVar(value=cfg.get("openac_dir") or (str(L.find_openac()[0].parent) if L.find_openac() else ""))
 
         f = ttk.Frame(self, padding=12)
         f.pack(fill="both", expand=True)
@@ -57,8 +59,17 @@ class App(tk.Tk):
         link.bind("<Button-1>", lambda _e: webbrowser.open(L.AC_CLIENT_HELP))
         link2 = tk.Label(f, text="Or use the open-source OpenAC client (you still supply your own DAT files)",
                          fg="#0b57d0", cursor="hand2", font=("Segoe UI", 9, "underline"))
-        link2.grid(row=10, column=0, columnspan=3, sticky="w", pady=(6, 0))
+        link2.grid(row=12, column=0, columnspan=3, sticky="w", pady=(6, 0))
         link2.bind("<Button-1>", lambda _e: webbrowser.open(L.OPENAC_URL))
+
+        ttk.Label(f, text="Play with").grid(row=5, column=0, sticky="w", pady=(8, 0))
+        rb = ttk.Frame(f)
+        rb.grid(row=5, column=1, columnspan=2, sticky="w", pady=(8, 0), padx=6)
+        ttk.Radiobutton(rb, text="Retail AC client (acclient.exe)", variable=self.v_ctype, value="retail").pack(side="left")
+        ttk.Radiobutton(rb, text="OpenAC", variable=self.v_ctype, value="openac").pack(side="left", padx=12)
+        ttk.Label(f, text="OpenAC folder").grid(row=6, column=0, sticky="w", pady=3)
+        ttk.Entry(f, textvariable=self.v_openac).grid(row=6, column=1, sticky="ew", padx=6)
+        ttk.Button(f, text="Browse...", command=self.pick_openac).grid(row=6, column=2)
 
         self.buttons = []
         rows_of_buttons = [
@@ -71,19 +82,19 @@ class App(tk.Tk):
         ]
         for r, row in enumerate(rows_of_buttons):
             bar = ttk.Frame(f)
-            bar.grid(row=5 + r, column=0, columnspan=3, pady=(10 if r == 0 else 0, 4), sticky="w")
+            bar.grid(row=7 + r, column=0, columnspan=3, pady=(10 if r == 0 else 0, 4), sticky="w")
             for text, fn in row:
                 b = ttk.Button(bar, text=text, command=fn)
                 b.pack(side="left", padx=(0, 6))
                 self.buttons.append(b)
 
         ttk.Label(f, textvariable=self.v_status, font=("Segoe UI", 10, "bold")).grid(
-            row=7, column=0, columnspan=3, sticky="w")
+            row=9, column=0, columnspan=3, sticky="w")
         self.prog = ttk.Progressbar(f, mode="indeterminate")
-        self.prog.grid(row=8, column=0, columnspan=3, sticky="ew", pady=4)
+        self.prog.grid(row=10, column=0, columnspan=3, sticky="ew", pady=4)
         self.log = scrolledtext.ScrolledText(f, height=18, state="disabled", font=("Consolas", 9))
-        self.log.grid(row=9, column=0, columnspan=3, sticky="nsew")
-        f.rowconfigure(9, weight=1)
+        self.log.grid(row=11, column=0, columnspan=3, sticky="nsew")
+        f.rowconfigure(11, weight=1)
         self.after(100, self.pump)
 
     # ---- file pickers
@@ -93,6 +104,11 @@ class App(tk.Tk):
             self.v_client.set(p)
             if not self.v_dats.get() and list(Path(p).parent.glob("client_*.dat")):
                 self.v_dats.set(str(Path(p).parent))  # the retail install folder already holds the DAT files
+
+    def pick_openac(self):
+        p = filedialog.askdirectory(title="Folder with AcDream.App.exe (your OpenAC install)")
+        if p:
+            self.v_openac.set(p)
 
     def pick_dats(self):
         p = filedialog.askdirectory(title="Folder with client_cell_1.dat, client_portal.dat, ...")
@@ -124,14 +140,16 @@ class App(tk.Tk):
     def args(self, **extra):
         a = argparse.Namespace(dats=self.v_dats.get() or None, client=self.v_client.get() or None,
                                account=self.v_account.get() or None, password=self.v_password.get() or None,
-                               no_client=False, all=False, what="all", file=None)
+                               no_client=False, all=False, what="all", file=None,
+                               client_type=self.v_ctype.get(), openac_dir=self.v_openac.get() or None)
         for k, v in extra.items():
             setattr(a, k, v)
         return a
 
     def remember(self):
         cfg = L.load_cfg()
-        cfg.update(client=self.v_client.get(), dats=self.v_dats.get(), account=self.v_account.get())
+        cfg.update(client=self.v_client.get(), dats=self.v_dats.get(), account=self.v_account.get(),
+                   client_type=self.v_ctype.get(), openac_dir=self.v_openac.get())
         L.save_cfg(cfg)
 
     def work(self, fn, done_msg):
@@ -163,6 +181,14 @@ class App(tk.Tk):
 
     # ---- actions
     def need_client(self):
+        if self.v_ctype.get() == "openac":
+            if L.find_openac(self.v_openac.get() or None):
+                return True
+            if messagebox.askyesno("OpenAC not found",
+                                   "Could not find your OpenAC install (AcDream.App.exe). Choose its folder, or open the "
+                                   "OpenAC download page?"):
+                webbrowser.open(L.OPENAC_URL)
+            return False
         p = self.v_client.get().strip().strip('"')
         if p and Path(p).exists():
             return True
@@ -183,7 +209,7 @@ class App(tk.Tk):
             self.work(lambda: L.cmd_up(self.args()), "Done. The game should be starting.")
 
     def do_play(self):
-        if self.need_account():
+        if self.need_client() and self.need_account():
             self.work(lambda: L.cmd_play(self.args()), "Done.")
 
     def do_backup(self):
