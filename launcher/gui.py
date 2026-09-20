@@ -55,6 +55,10 @@ class App(tk.Tk):
                         fg="#0b57d0", cursor="hand2", font=("Segoe UI", 9, "underline"))
         link.grid(row=4, column=0, sticky="w", pady=(6, 0))
         link.bind("<Button-1>", lambda _e: webbrowser.open(L.AC_CLIENT_HELP))
+        link2 = tk.Label(f, text="Or use the open-source OpenAC client (you still supply your own DAT files)",
+                         fg="#0b57d0", cursor="hand2", font=("Segoe UI", 9, "underline"))
+        link2.grid(row=10, column=0, columnspan=3, sticky="w", pady=(6, 0))
+        link2.bind("<Button-1>", lambda _e: webbrowser.open(L.OPENAC_URL))
 
         self.buttons = []
         rows_of_buttons = [

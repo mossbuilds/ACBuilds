@@ -6,6 +6,8 @@ Self-contained [ACE](https://github.com/ACEmulator/ACE) (Asheron's Call Emulator
 
 This project only provides the **server and database**. You install the game client and its DAT files yourself: follow the guide at **https://www.accpp.net/manual-installation**. The launcher points your DAT folder at that install (`client_cell_1.dat`, `client_portal.dat`, `client_highres.dat`, `client_local_English.dat`) and starts `acclient.exe` for you. Nothing copyrighted is ever stored in our images.
 
+**Alternative client: [OpenAC](https://github.com/eriknihlen/OpenAC/releases/latest)** (MIT-licensed, open source, cross-platform, made for ACE servers). It ships no game data either, so you still supply your own `client_*.dat` files. It needs a Vulkan 1.3 capable GPU, and it is beta software. Point it at this server (`127.0.0.1`, port `9000`) the same way as the retail client. The ACBuilds launcher does not start OpenAC for you yet.
+
 ## Quick start (auto-installs Docker if missing)
 
 Put your AC client DAT files (`client_cell_1.dat`, `client_portal.dat`, `client_highres.dat`, `client_local_English.dat`) in a `dats/` folder next to the script, then:

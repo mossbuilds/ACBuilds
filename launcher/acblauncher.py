@@ -27,6 +27,8 @@ except Exception:
 REGISTRY = "ghcr.io/mossbuilds"
 # We never ship the Asheron's Call client or DAT files; people install those themselves.
 AC_CLIENT_HELP = "https://www.accpp.net/manual-installation"
+# OpenAC: MIT-licensed open-source client that talks to ACE. Ships no game data - you still supply your own DAT files.
+OPENAC_URL = "https://github.com/eriknihlen/OpenAC/releases/latest"
 DB_PASS = ("ace", "ace-local")  # internal-only credential, see config/Config.js
 
 COMPOSE = f"""name: acbuilds
@@ -314,7 +316,7 @@ def cmd_up(a):
     if not list(dats.glob("client_*.dat")):
         sys.exit(f"Put your AC client DAT files (client_cell_1.dat, client_portal.dat, client_highres.dat, "
                  f"client_local_English.dat) in:\n  {dats}\nthen run again (or pass --dats DIR).\n"
-                 f"Don't have the game client yet? How to install it: {AC_CLIENT_HELP}")
+                 f"Don't have the game client yet? How to install it: {AC_CLIENT_HELP}\nOr use the open-source OpenAC client (you still supply the DAT files): {OPENAC_URL}")
     print("[2/4] Downloading the server and database images (first time is a few hundred MB)...")
     if not pull_with_retry(dats):
         sys.exit("Could not pull the images after several tries (are you online, and are the ghcr.io/mossbuilds packages public?).")
