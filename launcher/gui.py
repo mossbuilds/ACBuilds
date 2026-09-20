@@ -25,7 +25,7 @@ class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title(f"ACBuilds Launcher {L.VERSION}")
-        self.geometry("760x600")
+        self.geometry("860x600")
         self.minsize(640, 480)
         self.q = queue.Queue()
         self.busy = False
@@ -56,7 +56,8 @@ class App(tk.Tk):
         bar.grid(row=5, column=0, columnspan=3, pady=10, sticky="w")
         self.buttons = []
         for text, fn in [("Install && Play".replace("&&", "&"), self.do_install_play), ("Play only", self.do_play),
-                         ("Backup", self.do_backup), ("Update", self.do_update), ("Stop server", self.do_stop)]:
+                         ("Backup", self.do_backup), ("Update", self.do_update), ("Stop server", self.do_stop),
+                         ("Uninstall server + DB", self.do_uninstall)]:
             b = ttk.Button(bar, text=text, command=fn)
             b.pack(side="left", padx=(0, 6))
             self.buttons.append(b)
@@ -168,6 +169,17 @@ class App(tk.Tk):
 
     def do_stop(self):
         self.work(lambda: (L.ensure_docker(), L.compose("down")), "Server stopped.")
+
+
+    def do_uninstall(self):
+        if not messagebox.askyesno(
+                "Uninstall server + database",
+                "This removes the ACBuilds server and database from Docker: the containers, their images and the "
+                "database data.\n\nYour Asheron's Call client and DAT files are NOT touched.\n"
+                "A backup of accounts and characters is saved first (acbuilds-data\\backups) and kept.\n\nContinue?",
+                icon="warning"):
+            return
+        self.work(lambda: L.cmd_uninstall(self.args(yes=True, purge=False)), "Uninstalled. Your AC client was not touched.")
 
 
 def run_gui():

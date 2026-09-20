@@ -59,7 +59,7 @@ Built into the server image: [CustomClothingBase](https://github.com/OptimShi/Cu
 
 ## Self-contained launcher (no Python needed)
 
-Every release has a single-file program with a **window**: pick your `acclient.exe`, type an account and password, click **Install & Play**. It installs Docker if missing, downloads and starts the server and database containers, waits for the world to open, then starts Asheron's Call. It also has Backup, Update and Stop buttons. (Windows: Docker Desktop may ask for a restart; reopen the launcher afterwards and click again.)
+Every release has a single-file program with a **window**: pick your `acclient.exe`, type an account and password, click **Install & Play**. It installs Docker if missing, downloads and starts the server and database containers, waits for the world to open, then starts Asheron's Call. It also has Backup, Update, Stop and **Uninstall server + DB** buttons (uninstall saves a backup first and never touches your AC client or DAT files; CLI: `acbuilds uninstall`). (Windows: Docker Desktop may ask for a restart; reopen the launcher afterwards and click again.)
 
 | OS | Download from the release |
 |---|---|

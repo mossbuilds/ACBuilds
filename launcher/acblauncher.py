@@ -8,6 +8,7 @@ starts the ACE server + database containers, and prints the IP:port to connect t
   acbuilds backup [--all]           accounts + characters (ace_auth, ace_shard); --all adds ace_world
   acbuilds restore FILE.sql.gz
   acbuilds update [server|db|all]   backup FIRST, pull new images, redeploy
+  acbuilds uninstall [--yes] [--purge]   remove server + database (never touches the AC client)
   acbuilds version
 
 Stdlib only. Files live in ./acbuilds-data next to where you run it (compose file, backups/, dats/, mods/, content/).
@@ -220,6 +221,37 @@ def pull_with_retry(dats=None, tries=8):
     return False
 
 
+def cmd_uninstall(a):
+    """Remove the ACE server + database from Docker. NEVER touches the AC client or any DAT files."""
+    ensure_docker()
+    if not getattr(a, "yes", False):
+        if not (sys.stdin and sys.stdin.isatty()):
+            sys.exit("Run with --yes to confirm the uninstall.")
+        print("This removes the ACBuilds server + database containers, their images and the database data.")
+        print("Your Asheron's Call client and DAT files are NOT touched. A backup is saved first.")
+        if input("Type YES to continue: ").strip() != "YES":
+            sys.exit("Cancelled.")
+    r = run(["docker", "inspect", "-f", "{{.State.Running}}", "ace-db"], check=False, capture=True)
+    if r.returncode == 0 and "true" in (r.stdout or ""):
+        print("[1/3] Saving a backup of accounts and characters first...")
+        do_backup()  # exits (and stops the uninstall) if the backup fails
+    else:
+        print("[1/3] Database is not running - no backup taken.")
+    print("[2/3] Removing containers, images and the database volume...")
+    compose("down", "--rmi", "all", "--volumes", "--remove-orphans", check=False)
+    for img in ("acbuilds-server", "acbuilds-db"):
+        run(["docker", "rmi", "-f", f"{REGISTRY}/{img}:latest"], check=False, capture=True)
+    run(["docker", "volume", "rm", "acbuilds_ace-db"], check=False, capture=True)
+    print("[3/3] Cleaning up launcher files...")
+    if getattr(a, "purge", False) and DATA.exists():
+        for child in DATA.iterdir():
+            if child.name in ("dats", "backups"):
+                continue  # never delete DAT files or your backups
+            shutil.rmtree(child, ignore_errors=True) if child.is_dir() else child.unlink(missing_ok=True)
+    print("Uninstalled. Your AC client and DAT files were not touched; backups are kept in "
+          f"{DATA / 'backups'}. Docker itself is left installed.")
+
+
 def cmd_up(a):
     ensure_docker()
     dats_arg = getattr(a, "dats", None) or load_cfg().get("dats")
@@ -328,6 +360,8 @@ def main():
         s.add_argument("--client", help="path to acclient.exe (or its folder); remembered for next time")
         s.add_argument("--account"); s.add_argument("--password")
     sub.add_parser("down"); sub.add_parser("status"); sub.add_parser("logs"); sub.add_parser("version")
+    un = sub.add_parser("uninstall", help="remove the server + database (never the AC client)")
+    un.add_argument("--yes", action="store_true"); un.add_argument("--purge", action="store_true")
     b = sub.add_parser("backup"); b.add_argument("--all", action="store_true")
     r = sub.add_parser("restore"); r.add_argument("file")
     up = sub.add_parser("update"); up.add_argument("what", nargs="?", default="all", choices=["server", "db", "all"])
@@ -338,6 +372,10 @@ def main():
                 return run_gui()
         except Exception as e:  # no tkinter / no display: fall back to the terminal flow
             print(f"(GUI unavailable: {e})")
+            if IS_WIN and getattr(sys, "frozen", False):
+                import ctypes
+                ctypes.windll.user32.MessageBoxW(0, f"The ACBuilds window could not start:\n{e}", "ACBuilds", 0x10)
+                return
     a = ap.parse_args()
     a.cmd = a.cmd or "up"
     if a.cmd == "up" and not hasattr(a, "dats"):
@@ -354,6 +392,8 @@ def main():
         ensure_docker(); compose("ps")
     elif a.cmd == "logs":
         ensure_docker(); compose("logs", "-f", "ace-server", check=False)
+    elif a.cmd == "uninstall":
+        cmd_uninstall(a)
     elif a.cmd == "backup":
         ensure_docker(); do_backup(a.all)
     elif a.cmd == "restore":
