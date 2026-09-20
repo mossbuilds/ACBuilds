@@ -5,6 +5,8 @@ name: build-and-publish
 on:
   push:
     branches: [main]
+    # content, docs and Markdown changes do not change any image or the VPS, so they do not rebuild or redeploy
+    paths-ignore: ["custom-content/**", "docs/**", "**/*.md"]
   schedule:
     - cron: "*/30 * * * *"
   workflow_dispatch:
