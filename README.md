@@ -2,6 +2,10 @@
 
 Self-contained [ACE](https://github.com/ACEmulator/ACE) (Asheron's Call Emulator) image: .NET server + MariaDB with `ace_auth`, `ace_shard`, `ace_world` pre-seeded at build time. Built and published to GHCR automatically; a scheduled workflow (every 30 min) rebuilds whenever `ACEmulator/ACE`, the world-data release, or a watched tool repo changes.
 
+## You need the Asheron's Call client (not included)
+
+This project only provides the **server and database**. You install the game client and its DAT files yourself: follow the guide at **https://www.accpp.net/manual-installation**. The launcher points your DAT folder at that install (`client_cell_1.dat`, `client_portal.dat`, `client_highres.dat`, `client_local_English.dat`) and starts `acclient.exe` for you. Nothing copyrighted is ever stored in our images.
+
 ## Quick start (auto-installs Docker if missing)
 
 Put your AC client DAT files (`client_cell_1.dat`, `client_portal.dat`, `client_highres.dat`, `client_local_English.dat`) in a `dats/` folder next to the script, then:

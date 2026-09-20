@@ -1,7 +1,7 @@
 """ACBuilds launcher GUI (tkinter, ships with Python and the PyInstaller exe).
 One window: pick your acclient.exe, type an account, click 'Install & Play'. It installs Docker if needed, downloads and
 starts the server + database containers, waits for the world to open, then starts the game."""
-import argparse, ctypes, queue, sys, threading
+import argparse, ctypes, queue, sys, threading, webbrowser
 import tkinter as tk
 from tkinter import filedialog, messagebox, scrolledtext, ttk
 from pathlib import Path
@@ -51,6 +51,10 @@ class App(tk.Tk):
         ttk.Entry(f, textvariable=self.v_password, show="*").grid(row=3, column=1, sticky="ew", padx=6)
         ttk.Label(f, text="The first account created becomes the server admin.", foreground="#666").grid(
             row=4, column=1, sticky="w", padx=6)
+        link = tk.Label(f, text="Don't have the Asheron's Call client? How to install it (opens in your browser)",
+                        fg="#0b57d0", cursor="hand2", font=("Segoe UI", 9, "underline"))
+        link.grid(row=4, column=0, sticky="w", pady=(6, 0))
+        link.bind("<Button-1>", lambda _e: webbrowser.open(L.AC_CLIENT_HELP))
 
         self.buttons = []
         rows_of_buttons = [
@@ -154,6 +158,16 @@ class App(tk.Tk):
         threading.Thread(target=target, daemon=True).start()
 
     # ---- actions
+    def need_client(self):
+        p = self.v_client.get().strip().strip('"')
+        if p and Path(p).exists():
+            return True
+        if messagebox.askyesno("Asheron's Call client needed",
+                               "Select your acclient.exe first.\n\nThe game client is not included. "
+                               "Open the install guide in your browser?"):
+            webbrowser.open(L.AC_CLIENT_HELP)
+        return False
+
     def need_account(self):
         if not (self.v_account.get() and self.v_password.get()):
             messagebox.showinfo("ACBuilds", "Enter an account name and password first.")
@@ -161,7 +175,7 @@ class App(tk.Tk):
         return True
 
     def do_install_play(self):
-        if self.need_account():
+        if self.need_client() and self.need_account():
             self.work(lambda: L.cmd_up(self.args()), "Done. The game should be starting.")
 
     def do_play(self):

@@ -12,6 +12,8 @@ starts the ACE server + database containers, and prints the IP:port to connect t
   acbuilds uninstall [server|db|all] [--yes] [--purge]   never touches the AC client; db removal backs up first
   acbuilds version
 
+You need your own Asheron's Call client + DAT files (not included). How to install it: https://www.accpp.net/manual-installation
+
 Stdlib only. Files live in ./acbuilds-data next to where you run it (compose file, backups/, dats/, mods/, content/).
 """
 import argparse, datetime, getpass, gzip, json, os, platform, shutil, socket, subprocess, sys, time
@@ -23,6 +25,8 @@ except Exception:
     VERSION = "dev"
 
 REGISTRY = "ghcr.io/mossbuilds"
+# We never ship the Asheron's Call client or DAT files; people install those themselves.
+AC_CLIENT_HELP = "https://www.accpp.net/manual-installation"
 DB_PASS = ("ace", "ace-local")  # internal-only credential, see config/Config.js
 
 COMPOSE = f"""name: acbuilds
@@ -185,7 +189,7 @@ def launch_client(a, host="127.0.0.1"):
     if Path(path).is_dir():
         path = str(Path(path) / "acclient.exe")
     if not Path(path).exists():
-        print(f"Client not found: {path}")
+        print(f"Client not found: {path}\nHow to install the AC client: {AC_CLIENT_HELP}")
         return
     account = getattr(a, "account", None) or cfg.get("account")
     if not account and interactive:
@@ -309,7 +313,8 @@ def cmd_up(a):
         (DATA / d).mkdir(parents=True, exist_ok=True)
     if not list(dats.glob("client_*.dat")):
         sys.exit(f"Put your AC client DAT files (client_cell_1.dat, client_portal.dat, client_highres.dat, "
-                 f"client_local_English.dat) in:\n  {dats}\nthen run again (or pass --dats DIR).")
+                 f"client_local_English.dat) in:\n  {dats}\nthen run again (or pass --dats DIR).\n"
+                 f"Don't have the game client yet? How to install it: {AC_CLIENT_HELP}")
     print("[2/4] Downloading the server and database images (first time is a few hundred MB)...")
     if not pull_with_retry(dats):
         sys.exit("Could not pull the images after several tries (are you online, and are the ghcr.io/mossbuilds packages public?).")
