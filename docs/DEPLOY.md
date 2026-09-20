@@ -40,3 +40,10 @@ A small read-only service (`status/acb_status.py`, systemd unit `acb-status`, po
 - **"Online"** is inferred from the server logs (account connected and not yet disconnected, plus its most recently used character); positions are what the server last saved.
 - `deploy.sh` refreshes `acb_status.py` and `index.html` from the deployed commit and restarts the service (a narrow sudoers rule allows exactly `systemctl restart acb-status`).
 - The Caddy site block for `ace.mossbuilds.xyz` is in `/etc/caddy/Caddyfile` on the VPS (backup: `Caddyfile.bak-acstatus`).
+
+## Server console from the host
+Both game servers accept ACE console commands from a named pipe, so content tools and admins can run `clearcache`, `import-sql`, `export-sql`, `serverstatus`, `world open|close` and the rest without attaching a terminal:
+
+    docker exec ace-server sh -c 'echo "clearcache" > /ace/console.in'    # output appears in: docker logs ace-server
+
+Only someone who can already run `docker exec` (root / docker group) can use it; it is not reachable from the network. `stop-now` ends the server and the container exits (Docker then restarts it).
