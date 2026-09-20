@@ -35,7 +35,7 @@ public class PatchClass(BasicMod mod, string settingsName = "Settings.json") : B
     public override Task OnWorldOpen()
     {
         Settings = SettingsContainer.Settings;
-        ModManager.Log($"{Tag} ready: whereis, spawnnear (console only), /dash (admin, in game)");
+        ModManager.Log($"{Tag} ready: whereis, spawnnear (console only), /dash /warp /traveler (admin, in game)");
         return base.OnWorldOpen();
     }
 
@@ -122,6 +122,31 @@ public class PatchClass(BasicMod mod, string settingsName = "Settings.json") : B
                 catch (Exception ex) { ModManager.Log($"{Tag} warp tick: {ex.Message}", ModManager.LogLevel.Warn); }
             }).EnqueueChain();
         }
+    }
+
+    /// <summary>In game, Admin: /traveler puts a temporary Moss the Traveler (wcid 900021227) 5 units in front of you.</summary>
+    [CommandHandler("traveler", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld, 0, "Spawn Moss the Traveler (quest giver + town teleporter) next to you. Temporary, like /create. /traveler [wcid or classname] spawns any other weenie the same way.", "[wcid|classname]")]
+    public static void HandleTraveler(Session session, params string[] parameters)
+    {
+        var player = session?.Player;
+        if (player == null) return;
+        var what = parameters.Length > 0 ? parameters[0] : "900021227";
+        var weenie = uint.TryParse(what, out var wcid) ? DatabaseManager.World.GetCachedWeenie(wcid) : DatabaseManager.World.GetCachedWeenie(what);
+        if (weenie == null || weenie.WeenieType is WeenieType.Admin or WeenieType.Sentinel or WeenieType.Undef)
+        {
+            session.Network.EnqueueSend(new GameMessageSystemChat($"Cannot spawn '{what}' (not found, or not allowed).", ChatMessageType.Broadcast));
+            return;
+        }
+        var obj = WorldObjectFactory.CreateNewWorldObject(weenie);
+        if (obj == null) return;
+        obj.Location = obj.WeenieType == WeenieType.Creature
+            ? player.Location.InFrontOf(5f, true)
+            : player.Location.InFrontOf(Math.Max(MinItemDistance, obj.UseRadius ?? MinItemDistance));
+        obj.Location.LandblockId = new LandblockId(obj.Location.GetCell());
+        if (obj.EnterWorld())
+            ModManager.Log($"{Tag} /traveler: {player.Name} spawned {obj.Name} (wcid {weenie.WeenieClassId}) at {obj.Location.ToLOCString()}");
+        else
+            session.Network.EnqueueSend(new GameMessageSystemChat("That spot is blocked; move and try again.", ChatMessageType.Broadcast));
     }
 
     private static string Describe(Player p)
