@@ -65,6 +65,121 @@ public class PatchClass(BasicMod mod, string settingsName = "Settings.json") : B
         player.Teleport(dest);
     }
 
+    // ---- /boost: EXPERIMENT. Server pushes extra forward velocity to the player's client while running (the client caps its own run speed). ----
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<uint, float> Boosted = new();
+    private static System.Threading.Timer? boostTimer;
+
+    [CommandHandler("boost", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld, 0, "EXPERIMENT: push extra forward speed to yourself while running. /boost [extra units per second, default 18], /boost off", "[extra|off]")]
+    public static void HandleBoost(Session session, params string[] parameters)
+    {
+        var player = session?.Player;
+        if (player == null) return;
+        var guid = player.Guid.Full;
+        if (parameters.Length > 0 && parameters[0].Equals("off", StringComparison.OrdinalIgnoreCase))
+        {
+            Boosted.TryRemove(guid, out _);
+            session.Network.EnqueueSend(new GameMessageSystemChat("Boost off.", ChatMessageType.Broadcast));
+            return;
+        }
+        var extra = 18f;
+        if (parameters.Length > 0 && !float.TryParse(parameters[0], out extra))
+        {
+            session.Network.EnqueueSend(new GameMessageSystemChat("Usage: /boost [extra 1-50] | /boost off", ChatMessageType.Broadcast));
+            return;
+        }
+        extra = Math.Clamp(extra, 1f, 50f);   // ACE/AC clamp velocity to 50 (PhysicsGlobals.MaxVelocity)
+        Boosted[guid] = extra;
+        boostTimer ??= new System.Threading.Timer(_ => BoostTick(), null, 100, 100);
+        session.Network.EnqueueSend(new GameMessageSystemChat($"Boost on: +{extra} while running forward. /boost off to stop.", ChatMessageType.Broadcast));
+        ModManager.Log($"{Tag} boost on for {player.Name} +{extra}");
+    }
+
+    private static void BoostTick()
+    {
+        foreach (var kv in Boosted)
+        {
+            var player = PlayerManager.GetOnlinePlayer(kv.Key);
+            if (player == null) { Boosted.TryRemove(kv.Key, out _); continue; }
+            var extra = kv.Value;
+            new ActionChain(player, () =>
+            {
+                try
+                {
+                    var mi = player.PhysicsObj?.MovementManager?.MotionInterpreter;
+                    if (mi == null || mi.InterpretedState.ForwardCommand != (uint)MotionCommand.RunForward) return;
+                    player.PhysicsObj.set_local_velocity(new System.Numerics.Vector3(0, extra, 0), false);
+                    player.EnqueueBroadcast(new GameMessageVectorUpdate(player));
+                }
+                catch (Exception ex) { ModManager.Log($"{Tag} boost tick: {ex.Message}", ModManager.LogLevel.Warn); }
+            }).EnqueueChain();
+        }
+    }
+
+    // ---- /warp: while running forward, hop the player forward in short steps, stopping at cliffs / steep or unwalkable ground / indoors. ----
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<uint, float> Warping = new();
+    private static System.Threading.Timer? warpTimer;
+
+    [CommandHandler("warp", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld, 0, "Fast travel outdoors: while you run forward the server hops you ahead in short steps. /warp [step 5-60, default 25], /warp off", "[step|off]")]
+    public static void HandleWarp(Session session, params string[] parameters)
+    {
+        var player = session?.Player;
+        if (player == null) return;
+        var guid = player.Guid.Full;
+        if (parameters.Length > 0 && parameters[0].Equals("off", StringComparison.OrdinalIgnoreCase))
+        {
+            Warping.TryRemove(guid, out _);
+            session.Network.EnqueueSend(new GameMessageSystemChat("Warp off.", ChatMessageType.Broadcast));
+            return;
+        }
+        var step = 25f;
+        if (parameters.Length > 0 && !float.TryParse(parameters[0], out step))
+        {
+            session.Network.EnqueueSend(new GameMessageSystemChat("Usage: /warp [step 5-60] | /warp off", ChatMessageType.Broadcast));
+            return;
+        }
+        step = Math.Clamp(step, 5f, 60f);
+        Warping[guid] = step;
+        warpTimer ??= new System.Threading.Timer(_ => WarpTick(), null, 150, 150);
+        session.Network.EnqueueSend(new GameMessageSystemChat($"Warp on: {step} units per hop while running forward, outdoors only, stops at cliffs. /warp off to stop.", ChatMessageType.Broadcast));
+        ModManager.Log($"{Tag} warp on for {player.Name} step {step}");
+    }
+
+    private static void WarpTick()
+    {
+        foreach (var kv in Warping)
+        {
+            var player = PlayerManager.GetOnlinePlayer(kv.Key);
+            if (player == null) { Warping.TryRemove(kv.Key, out _); continue; }
+            var step = kv.Value;
+            new ActionChain(player, () =>
+            {
+                try
+                {
+                    if (player.Teleporting || player.Location.Indoors) return;
+                    var mi = player.PhysicsObj?.MovementManager?.MotionInterpreter;
+                    if (mi == null || mi.InterpretedState.ForwardCommand != (uint)MotionCommand.RunForward) return;
+
+                    // walk the path in 4-unit samples; stop before the first bad one
+                    var prevZ = player.Location.PositionZ;
+                    Position? good = null;
+                    for (var d = 4f; d <= step + 0.01f; d += 4f)
+                    {
+                        var p = player.Location.InFrontOf(d);
+                        p.LandblockId = new LandblockId(p.GetCell());
+                        if (p.Indoors) break;
+                        var z = p.GetTerrainZ();
+                        if (!p.IsWalkable() || Math.Abs(z - prevZ) > 3f) break;
+                        p.PositionZ = z + 0.5f;
+                        prevZ = z;
+                        good = p;
+                    }
+                    if (good != null) player.Teleport(good);
+                }
+                catch (Exception ex) { ModManager.Log($"{Tag} warp tick: {ex.Message}", ModManager.LogLevel.Warn); }
+            }).EnqueueChain();
+        }
+    }
+
     private static string Describe(Player p)
     {
         var pos = p.Location;
