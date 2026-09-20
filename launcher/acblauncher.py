@@ -210,19 +210,30 @@ def cmd_play(a):
     launch_client(a)
 
 
+def pull_with_retry(dats=None, tries=8):
+    """Slow or flaky connections drop mid-download ('unexpected EOF'); Docker keeps finished layers, so retrying resumes."""
+    for i in range(1, tries + 1):
+        if compose("pull", check=False, dats=dats).returncode == 0:
+            return True
+        print(f"
+Download interrupted (attempt {i}/{tries}); retrying - finished layers are kept...")
+        time.sleep(5)
+    return False
+
+
 def cmd_up(a):
     ensure_docker()
     dats_arg = getattr(a, "dats", None) or load_cfg().get("dats")
     dats = Path(dats_arg).expanduser().resolve() if dats_arg else DATA / "dats"
     dats.mkdir(parents=True, exist_ok=True)
     for d in ("mods", "content", "backups"):
-        (DATA / d).mkdir(exist_ok=True)
+        (DATA / d).mkdir(parents=True, exist_ok=True)
     if not list(dats.glob("client_*.dat")):
         sys.exit(f"Put your AC client DAT files (client_cell_1.dat, client_portal.dat, client_highres.dat, "
                  f"client_local_English.dat) in:\n  {dats}\nthen run again (or pass --dats DIR).")
     print("[2/4] Downloading the server and database images (first time is a few hundred MB)...")
-    if compose("pull", check=False, dats=dats).returncode != 0:
-        sys.exit("Could not pull the images (are you online, and are the ghcr.io/mossbuilds packages public?).")
+    if not pull_with_retry(dats):
+        sys.exit("Could not pull the images after several tries (are you online, and are the ghcr.io/mossbuilds packages public?).")
     print("[3/4] Starting the server and database...")
     compose("up", "-d", dats=dats)
     ip = lan_ip()
@@ -290,10 +301,12 @@ def cmd_update(a):
     what = a.what
     backup = do_backup()  # always first; exits here if it fails
     if what == "server":
-        compose("pull", "ace-server")
+        if not pull_with_retry():
+            sys.exit("Could not pull the server image.")
         compose("up", "-d", "ace-server")
     else:
-        compose("pull")
+        if not pull_with_retry():
+            sys.exit("Could not pull the images.")
         compose("stop", "ace-server")
         print("Replacing the database with the new pre-seeded image, then restoring your accounts and characters...")
         compose("rm", "-sf", "ace-db")
