@@ -1,0 +1,15 @@
+[Unit]
+Description=ACBuilds status page (servers, database, players)
+After=docker.service network.target
+
+[Service]
+User=acbuilds
+Group=acbuilds
+ExecStart=/usr/bin/python3 /opt/acbuilds/status/acb_status.py --port 8618 --data /opt/acbuilds/status/data
+Restart=always
+RestartSec=5
+NoNewPrivileges=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

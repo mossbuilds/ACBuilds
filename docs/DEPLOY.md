@@ -32,3 +32,11 @@ Repository secrets (Settings > Secrets and variables > Actions): `VPS_HOST`, `VP
 - **Characters are per server:** a character made on port 9000 exists only on the stock server; make a separate one on 9100. The account (`tom`, admin) works on both.
 - **Rollback:** restore a backup with `gunzip -c backups/<file> | docker exec -i ace-db mariadb -h127.0.0.1 -uace -pace-local`, and pin older images with `ACB_TAG=<release tag>` (see the Releases page).
 - The DNS record for `ace.mossbuilds.xyz` must be **DNS only** (not proxied) so UDP reaches the VPS.
+
+## Status page (https://ace.mossbuilds.xyz/)
+A small read-only service (`status/acb_status.py`, systemd unit `acb-status`, port 8618 on localhost) shows both game servers (up/starting/down, world open, uptime, memory, build), the database (accounts, characters, sizes, world content), the VPS load, and every character with its last saved position as a place name and map coordinates. Caddy serves it over HTTPS with the `tom` login (same password as the site). JSON is at `/api/status`.
+
+- **Where players are:** `acb_status.py` converts the saved position to map coordinates and names the nearest town/landmark, or the dungeon for indoor landblocks. It uses the two Crossroads of Dereth files `locations.xml` and `cod_locations.xml`, which are **not in git** (third-party data). They live in `/opt/acbuilds/status/data/` on the VPS; put them there again on a rebuilt VPS.
+- **"Online"** is inferred from the server logs (account connected and not yet disconnected, plus its most recently used character); positions are what the server last saved.
+- `deploy.sh` refreshes `acb_status.py` and `index.html` from the deployed commit and restarts the service (a narrow sudoers rule allows exactly `systemctl restart acb-status`).
+- The Caddy site block for `ace.mossbuilds.xyz` is in `/etc/caddy/Caddyfile` on the VPS (backup: `Caddyfile.bak-acstatus`).

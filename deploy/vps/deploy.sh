@@ -51,6 +51,13 @@ sed '/"Shard":/ s/"Database": *"ace_shard"/"Database": "ace_shard_vr"/' config.j
 rm -f config.js.new
 grep -q '"ace_shard_vr"' config-vr.js || { echo "ERROR: could not derive the VR config"; exit 1; }
 
+echo "== status page (https://ace.mossbuilds.xyz/)"
+mkdir -p status/data
+for f in acb_status.py index.html; do
+  curl -fsSL "https://raw.githubusercontent.com/mossbuilds/ACBuilds/$SHA/status/$f" -o "status/$f.new" && mv "status/$f.new" "status/$f" || { rm -f "status/$f.new"; echo "WARNING: could not update status/$f"; }
+done
+sudo -n /usr/bin/systemctl restart acb-status 2>/dev/null || echo "note: acb-status service not installed or not restartable by this user"
+
 ls dats/client_portal.dat dats/client_cell_1.dat dats/client_local_English.dat >/dev/null 2>&1 \
   || { echo "ERROR: AC DAT files missing in $APP/dats (client_portal.dat, client_cell_1.dat, client_local_English.dat)"; exit 1; }
 

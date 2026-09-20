@@ -14,8 +14,16 @@ id acbuilds >/dev/null 2>&1 || useradd -m -s /bin/bash acbuilds
 install -d -o acbuilds -g acbuilds "$APP" "$APP/dats" "$APP/mods" "$APP/mods-vr" "$APP/content" "$APP/backups"
 curl -fsSL "$RAW/install-docker.sh" -o /usr/local/sbin/acbuilds-install-docker
 chown root:root /usr/local/sbin/acbuilds-install-docker; chmod 755 /usr/local/sbin/acbuilds-install-docker
-echo 'acbuilds ALL=(root) NOPASSWD: /usr/local/sbin/acbuilds-install-docker' > /etc/sudoers.d/acbuilds
+printf '%s
+' 'acbuilds ALL=(root) NOPASSWD: /usr/local/sbin/acbuilds-install-docker' 'acbuilds ALL=(root) NOPASSWD: /usr/bin/systemctl restart acb-status' > /etc/sudoers.d/acbuilds
 chmod 440 /etc/sudoers.d/acbuilds; visudo -cf /etc/sudoers.d/acbuilds
+
+# status page service (files are kept current by deploy.sh; the location XML files are NOT in git - copy them to $APP/status/data)
+install -d -o acbuilds -g acbuilds "$APP/status" "$APP/status/data"
+curl -fsSL "$RAW/../../status/acb_status.py" -o "$APP/status/acb_status.py"
+curl -fsSL "$RAW/../../status/index.html" -o "$APP/status/index.html"
+curl -fsSL "$RAW/../../status/acb-status.service" -o /etc/systemd/system/acb-status.service
+chown -R acbuilds:acbuilds "$APP/status"; systemctl daemon-reload; systemctl enable --now acb-status
 echo "BIND_IP=127.0.0.1" > "$APP/.env"; chown acbuilds:acbuilds "$APP/.env"   # game ports stay private until the owner account exists
 curl -fsSL "$RAW/deploy.sh" -o "$APP/deploy.sh"
 curl -fsSL "$RAW/docker-compose.yml" -o "$APP/docker-compose.yml"

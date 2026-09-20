@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ACBuilds Status</title>
+<style>
+  :root {
+    --bg: #f4f5f7; --panel: #ffffff; --ink: #1c2330; --muted: #667085; --line: #e3e6ec;
+    --up: #17803d; --up-bg: #e3f5e9; --warn: #a15c00; --warn-bg: #fdf0d8; --down: #b42318; --down-bg: #fde7e4;
+    --accent: #2b5fd9; --dot: #98a2b3; --shadow: 0 1px 2px rgba(16,24,40,.06), 0 1px 3px rgba(16,24,40,.08);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #10141b; --panel: #171c26; --ink: #e7eaf0; --muted: #98a2b3; --line: #262d3b;
+      --up: #4ade80; --up-bg: #12301f; --warn: #fbbf24; --warn-bg: #33270b; --down: #f87171; --down-bg: #3b1714;
+      --accent: #7aa2ff; --dot: #667085; --shadow: none;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  .wrap { max-width: 1240px; margin: 0 auto; padding: 20px 16px 48px; }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+  h1 { font-size: 20px; margin: 0; letter-spacing: .2px; }
+  .sub { color: var(--muted); font-size: 12px; }
+  .grid { display: grid; gap: 14px; }
+  .g3 { grid-template-columns: repeat(3, 1fr); }
+  @media (max-width: 980px) { .g3 { grid-template-columns: 1fr; } }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; box-shadow: var(--shadow); min-width: 0; }
+  .card h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .6px; color: var(--muted); margin: 0 0 10px; font-weight: 600; }
+  .row { display: flex; justify-content: space-between; gap: 10px; padding: 4px 0; border-bottom: 1px dashed var(--line); }
+  .row:last-child { border-bottom: 0; }
+  .row span:first-child { color: var(--muted); }
+  .row span:last-child { text-align: right; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+  .title { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; gap: 8px; }
+  .title b { font-size: 16px; }
+  .pill { font-size: 12px; font-weight: 600; padding: 2px 9px; border-radius: 999px; }
+  .pill.up { color: var(--up); background: var(--up-bg); } .pill.starting { color: var(--warn); background: var(--warn-bg); } .pill.down { color: var(--down); background: var(--down-bg); }
+  .big { font-size: 26px; font-weight: 650; font-variant-numeric: tabular-nums; }
+  .kpis { display: flex; gap: 18px; margin: 4px 0 8px; flex-wrap: wrap; }
+  .kpis div small { display: block; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .5px; }
+  .bar { height: 8px; background: var(--line); border-radius: 6px; overflow: hidden; margin: 3px 0 8px; }
+  .bar i { display: block; height: 100%; background: var(--accent); }
+  .layout { display: grid; grid-template-columns: 360px 1fr; gap: 14px; margin-top: 14px; align-items: start; }
+  @media (max-width: 980px) { .layout { grid-template-columns: 1fr; } }
+  svg.map { width: 100%; height: auto; display: block; border-radius: 8px; background: var(--bg); border: 1px solid var(--line); }
+  .tools { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 10px; }
+  input[type=search], select { background: var(--bg); color: var(--ink); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; font: inherit; }
+  input[type=search] { min-width: 200px; flex: 1; }
+  label.chk { color: var(--muted); display: flex; align-items: center; gap: 5px; }
+  .tablewrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; height: auto; }
+  tbody tr { height: auto; }
+  th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: top; white-space: nowrap; }
+  td.wide, th.wide { white-space: normal; min-width: 210px; }
+  th { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .5px; font-weight: 600; position: sticky; top: 0; background: var(--panel); }
+  tr:hover td { background: color-mix(in srgb, var(--accent) 6%, transparent); }
+  .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--dot); margin-right: 6px; }
+  .dot.on { background: var(--up); box-shadow: 0 0 0 3px var(--up-bg); }
+  .tag { font-size: 11px; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+  .tag.vr { color: var(--accent); border-color: var(--accent); }
+  .tag.staff { color: var(--warn); border-color: var(--warn); }
+  .muted { color: var(--muted); font-size: 12px; }
+  .banner { display: none; background: var(--down-bg); color: var(--down); border-radius: 8px; padding: 8px 12px; margin-bottom: 12px; }
+  .banner.show { display: block; }
+  .legend { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 8px; font-size: 12px; color: var(--muted); }
+  .legend i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; }
+  footer { margin-top: 18px; color: var(--muted); font-size: 12px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>ACBuilds server status</h1>
+      <div class="sub" id="stamp">loading&hellip;</div>
+    </div>
+    <div class="sub">refreshes every 15 s &middot; <span id="collect"></span></div>
+  </header>
+  <div class="banner" id="banner"></div>
+
+  <div class="grid g3" id="servers"></div>
+
+  <div class="grid g3" style="margin-top:14px">
+    <div class="card" id="db"></div>
+    <div class="card" id="dbsizes"></div>
+    <div class="card" id="host"></div>
+  </div>
+
+  <div class="layout">
+    <div class="card">
+      <h2>Map of Dereth</h2>
+      <div id="mapbox"></div>
+      <div class="legend"><span><i style="background:#17803d"></i>online</span><span><i style="background:#98a2b3"></i>offline (last saved position)</span><span><i style="background:#2b5fd9"></i>town</span></div>
+      <div class="muted" style="margin-top:6px">Only outdoor positions and buildings in towns can be plotted. Dungeons and instanced areas are listed by name in the table.</div>
+    </div>
+    <div class="card">
+      <h2>Players</h2>
+      <div class="tools">
+        <input type="search" id="q" placeholder="Search name, account or place">
+        <select id="srv"><option value="">Both servers</option><option value="stock">Normal game</option><option value="vr">PC VR server</option></select>
+        <label class="chk"><input type="checkbox" id="onl"> online only</label>
+        <span class="muted" id="count"></span>
+      </div>
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th></th><th>Character</th><th>Server</th><th>Lvl</th><th>Heritage</th><th class="wide">Where (last saved position)</th><th>Map</th><th>Last login</th><th>Logins</th></tr></thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div>
+      <div id="empty" class="muted" style="display:none;padding:14px 4px">No characters match.</div>
+    </div>
+  </div>
+
+  <footer>
+    "Online" is inferred from the server logs (an account that connected and has not disconnected, and its most recently used character).
+    Positions are the last saved by the server, so they can lag a few minutes behind. Place names come from the Crossroads of Dereth location database.
+  </footer>
+</div>
+
+<script>
+(function () {
+  var DATA = null;
+  function h(tag, attrs) {                       // tiny DOM builder; text is always set via textContent (no HTML injection)
+    var e = document.createElement(tag);
+    if (attrs) for (var k in attrs) { if (k === 'class') e.className = attrs[k]; else if (k === 'title') e.title = attrs[k]; else e.setAttribute(k, attrs[k]); }
+    for (var i = 2; i < arguments.length; i++) { var c = arguments[i]; if (c == null || c === false) continue; e.appendChild(typeof c === 'object' ? c : document.createTextNode(String(c))); }
+    return e;
+  }
+  function $(id) { return document.getElementById(id); }
+  function clear(e) { while (e.firstChild) e.removeChild(e.firstChild); return e; }
+  function dur(s) { if (s == null) return '-'; var d = Math.floor(s / 86400), hh = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60); return (d ? d + 'd ' : '') + (d || hh ? hh + 'h ' : '') + m + 'm'; }
+  function ago(ts) { if (!ts) return 'never'; var s = Math.max(0, Date.now() / 1000 - ts); if (s < 90) return 'just now'; if (s < 5400) return Math.round(s / 60) + ' min ago'; if (s < 129600) return Math.round(s / 3600) + ' h ago'; return Math.round(s / 86400) + ' d ago'; }
+  function row(k, v) { return h('div', { class: 'row' }, h('span', null, k), h('span', null, v)); }
+  function fmt(n) { return n == null ? '-' : Number(n).toLocaleString(); }
+
+  function renderServers(d) {
+    var box = clear($('servers'));
+    d.servers.forEach(function (s) {
+      var st = s.status || 'down';
+      var c = h('div', { class: 'card' },
+        h('div', { class: 'title' }, h('b', null, s.label + ' · port ' + s.port), h('span', { class: 'pill ' + st }, st === 'up' ? 'Up' : st === 'starting' ? 'Starting' : 'Down')),
+        h('div', { class: 'kpis' },
+          h('div', null, h('span', { class: 'big' }, fmt(s.players_online)), h('small', null, 'players online')),
+          h('div', null, h('span', { class: 'big' }, fmt(s.characters)), h('small', null, 'characters')),
+          h('div', null, h('span', { class: 'big' }, dur(s.uptime_s)), h('small', null, 'uptime'))),
+        row('World', s.world_open ? 'open to players' : 'not open'),
+        row('Accounts connected', fmt(s.accounts_connected)),
+        row('World objects saved', fmt(s.objects)),
+        row('Memory / CPU', (s.stats && s.stats.mem ? s.stats.mem : '-') + ' / ' + (s.stats && s.stats.cpu ? s.stats.cpu : '-')),
+        row('Errors (24 h)', s.errors_24h == null ? '-' : String(s.errors_24h)),
+        row('Restarts', String(s.restarts == null ? '-' : s.restarts)),
+        row('Server build', s.binary || '-'));
+      box.appendChild(c);
+    });
+  }
+
+  function renderDb(d) {
+    var db = d.database || {}, a = db.accounts || {}, c = db.container || {};
+    var box = clear($('db'));
+    box.appendChild(h('h2', null, 'Database'));
+    box.appendChild(h('div', { class: 'title' }, h('b', null, 'MariaDB'), h('span', { class: 'pill ' + (c.running && (c.health === 'healthy' || !c.health) ? 'up' : 'down') }, c.running ? (c.health || 'running') : 'down')));
+    box.appendChild(row('Accounts', fmt(a.total) + '  (' + fmt(a.staff) + ' staff)'));
+    box.appendChild(row('New accounts, 24 h', fmt(a.new_24h)));
+    box.appendChild(row('Banned', fmt(a.banned)));
+    box.appendChild(row('Characters (both servers)', fmt(db.characters_total)));
+    box.appendChild(row('Players online now', fmt(db.players_online)));
+    box.appendChild(row('Game world content', db.world_weenies == null ? '-' : fmt(db.world_weenies) + ' objects'));
+    box.appendChild(row('Uptime / memory', dur(c.uptime_s) + ' / ' + (c.stats && c.stats.mem ? c.stats.mem : '-')));
+
+    var sz = db.sizes || {}, box2 = clear($('dbsizes'));
+    box2.appendChild(h('h2', null, 'Database size'));
+    var names = { ace_auth: 'Accounts (shared)', ace_world: 'Game world (shared)', ace_shard: 'Normal game characters', ace_shard_vr: 'PC VR characters' };
+    var max = 0, tot = 0; Object.keys(sz).forEach(function (k) { max = Math.max(max, sz[k]); tot += sz[k]; });
+    Object.keys(names).forEach(function (k) {
+      if (sz[k] == null) return;
+      box2.appendChild(h('div', { class: 'row' }, h('span', null, names[k]), h('span', null, sz[k].toFixed(1) + ' MB')));
+      box2.appendChild(h('div', { class: 'bar' }, h('i', { style: 'width:' + (max ? Math.max(2, sz[k] / max * 100) : 0) + '%' })));
+    });
+    box2.appendChild(row('Total', tot.toFixed(1) + ' MB'));
+
+    var hs = d.host || {}, box3 = clear($('host'));
+    box3.appendChild(h('h2', null, 'VPS'));
+    if (hs.mem_total_mb) {
+      var used = hs.mem_total_mb - hs.mem_avail_mb;
+      box3.appendChild(row('Memory used', fmt(used) + ' / ' + fmt(hs.mem_total_mb) + ' MB'));
+      box3.appendChild(h('div', { class: 'bar' }, h('i', { style: 'width:' + Math.round(used / hs.mem_total_mb * 100) + '%' })));
+    }
+    if (hs.load) box3.appendChild(row('Load (1 / 5 / 15 min)', hs.load.join(' / ')));
+    box3.appendChild(row('Machine uptime', dur(hs.uptime_s)));
+    box3.appendChild(row('Snapshot', d.generated ? new Date(d.generated).toLocaleTimeString() : '-'));
+  }
+
+  function renderMap(d) {
+    var W = 340, S = W / 204, box = clear($('mapbox'));
+    var NS = 'http://www.w3.org/2000/svg';
+    function el(n, a) { var e = document.createElementNS(NS, n); for (var k in a) e.setAttribute(k, a[k]); return e; }
+    var svg = el('svg', { viewBox: '0 0 ' + W + ' ' + W, 'class': 'map' });
+    function px(lon) { return (lon + 102) * S; } function py(lat) { return (102 - lat) * S; }
+    for (var g = -100; g <= 100; g += 50) {
+      svg.appendChild(el('line', { x1: px(g), y1: 0, x2: px(g), y2: W, stroke: 'currentColor', 'stroke-opacity': .10 }));
+      svg.appendChild(el('line', { x1: 0, y1: py(g), x2: W, y2: py(g), stroke: 'currentColor', 'stroke-opacity': .10 }));
+    }
+    (d.towns || []).forEach(function (t) {
+      svg.appendChild(el('circle', { cx: px(t[2]), cy: py(t[1]), r: 2.2, fill: '#2b5fd9', 'fill-opacity': .75 }));
+    });
+    var plotted = 0;
+    d.players.forEach(function (p) {
+      var l = p.location; if (!l || l.ns == null) return;
+      var c = el('circle', { cx: px(l.ew), cy: py(l.ns), r: p.online ? 5 : 3.2, fill: p.online ? '#17803d' : '#98a2b3', stroke: '#fff', 'stroke-width': .8 });
+      var tt = el('title', {}); tt.textContent = p.name + ' (' + p.server + ') - ' + (l.place || '') + ' ' + (l.coords || ''); c.appendChild(tt); svg.appendChild(c); plotted++;
+    });
+    var lab = el('text', { x: 6, y: 14, 'font-size': 10, fill: 'currentColor', 'fill-opacity': .55 }); lab.textContent = 'N'; svg.appendChild(lab);
+    box.appendChild(svg);
+    box.appendChild(h('div', { class: 'muted', style: 'margin-top:6px' }, plotted + ' of ' + d.players.length + ' characters plotted'));
+  }
+
+  function renderRows() {
+    if (!DATA) return;
+    var q = $('q').value.trim().toLowerCase(), sv = $('srv').value, on = $('onl').checked;
+    var list = DATA.players.filter(function (p) {
+      if (sv && p.server_key !== sv) return false;
+      if (on && !p.online) return false;
+      if (!q) return true;
+      var l = p.location || {};
+      return (p.name + ' ' + p.account + ' ' + (l.place || '') + ' ' + (l.town || '')).toLowerCase().indexOf(q) >= 0;
+    });
+    var body = clear($('rows'));
+    list.forEach(function (p) {
+      var l = p.location || {};
+      var where = h('td', { class: 'wide' }, h('div', null, l.place || 'unknown'), l.detail ? h('div', { class: 'muted' }, l.detail) : null, l.town && l.kind === 'outdoors' ? h('div', { class: 'muted' }, 'nearest town: ' + l.town) : null);
+      body.appendChild(h('tr', null,
+        h('td', null, h('span', { class: 'dot' + (p.online ? ' on' : ''), title: p.online ? 'online' : 'offline' })),
+        h('td', null, h('b', null, p.name), ' ', p.staff ? h('span', { class: 'tag staff' }, p.staff) : null, h('div', { class: 'muted' }, p.account)),
+        h('td', null, h('span', { class: 'tag' + (p.server_key === 'vr' ? ' vr' : '') }, p.server_key === 'vr' ? 'PC VR' : 'Normal')),
+        h('td', null, String(p.level)),
+        h('td', null, p.heritage),
+        where,
+        h('td', null, l.coords || (l.landblock ? 'LB ' + l.landblock : '-')),
+        h('td', { title: p.last_login ? new Date(p.last_login * 1000).toLocaleString() : '' }, p.online ? 'online now' : ago(p.last_login)),
+        h('td', null, fmt(p.logins))));
+    });
+    $('empty').style.display = list.length ? 'none' : 'block';
+    $('count').textContent = list.length + ' of ' + DATA.players.length + ' characters';
+  }
+
+  function render(d) {
+    DATA = d;
+    $('stamp').textContent = 'as of ' + (d.generated ? new Date(d.generated).toLocaleString() : '-');
+    $('collect').textContent = d.collect_seconds != null ? 'collected in ' + d.collect_seconds + ' s' : '';
+    var b = $('banner');
+    if (d.errors && d.errors.length) { b.textContent = 'Problems collecting some data: ' + d.errors.join(' | '); b.className = 'banner show'; } else { b.className = 'banner'; }
+    renderServers(d); renderDb(d); renderMap(d); renderRows();
+  }
+
+  function load() {
+    fetch('api/status', { cache: 'no-store' }).then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(render).catch(function (e) { var b = $('banner'); b.textContent = 'Could not reach the status service: ' + e.message; b.className = 'banner show'; });
+  }
+  ['q', 'srv', 'onl'].forEach(function (id) { $(id).addEventListener(id === 'q' ? 'input' : 'change', renderRows); });
+  if (window.__SNAPSHOT__) render(window.__SNAPSHOT__); else { load(); setInterval(load, 15000); }
+})();
+</script>
+</body>
+</html>
