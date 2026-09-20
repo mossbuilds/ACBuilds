@@ -68,61 +68,11 @@ public class PatchClass(BasicMod mod, string settingsName = "Settings.json") : B
         player.Teleport(dest);
     }
 
-    // ---- /boost: EXPERIMENT. Server pushes extra forward velocity to the player's client while running (the client caps its own run speed). ----
-    private static readonly System.Collections.Concurrent.ConcurrentDictionary<uint, float> Boosted = new();
-    private static System.Threading.Timer? boostTimer;
-
-    [CommandHandler("boost", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld, 0, "EXPERIMENT: push extra forward speed to yourself while running. /boost [extra units per second, default 18], /boost off", "[extra|off]")]
-    public static void HandleBoost(Session session, params string[] parameters)
-    {
-        var player = session?.Player;
-        if (player == null) return;
-        var guid = player.Guid.Full;
-        if (parameters.Length > 0 && parameters[0].Equals("off", StringComparison.OrdinalIgnoreCase))
-        {
-            Boosted.TryRemove(guid, out _);
-            session.Network.EnqueueSend(new GameMessageSystemChat("Boost off.", ChatMessageType.Broadcast));
-            return;
-        }
-        var extra = 18f;
-        if (parameters.Length > 0 && !float.TryParse(parameters[0], out extra))
-        {
-            session.Network.EnqueueSend(new GameMessageSystemChat("Usage: /boost [extra 1-50] | /boost off", ChatMessageType.Broadcast));
-            return;
-        }
-        extra = Math.Clamp(extra, 1f, 50f);   // ACE/AC clamp velocity to 50 (PhysicsGlobals.MaxVelocity)
-        Boosted[guid] = extra;
-        boostTimer ??= new System.Threading.Timer(_ => BoostTick(), null, 100, 100);
-        session.Network.EnqueueSend(new GameMessageSystemChat($"Boost on: +{extra} while running forward. /boost off to stop.", ChatMessageType.Broadcast));
-        ModManager.Log($"{Tag} boost on for {player.Name} +{extra}");
-    }
-
-    private static void BoostTick()
-    {
-        foreach (var kv in Boosted)
-        {
-            var player = PlayerManager.GetOnlinePlayer(kv.Key);
-            if (player == null) { Boosted.TryRemove(kv.Key, out _); continue; }
-            var extra = kv.Value;
-            new ActionChain(player, () =>
-            {
-                try
-                {
-                    var mi = player.PhysicsObj?.MovementManager?.MotionInterpreter;
-                    if (mi == null || mi.InterpretedState.ForwardCommand != (uint)MotionCommand.RunForward) return;
-                    player.PhysicsObj.set_local_velocity(new System.Numerics.Vector3(0, extra, 0), false);
-                    player.EnqueueBroadcast(new GameMessageVectorUpdate(player));
-                }
-                catch (Exception ex) { ModManager.Log($"{Tag} boost tick: {ex.Message}", ModManager.LogLevel.Warn); }
-            }).EnqueueChain();
-        }
-    }
-
     // ---- /warp: while running forward, hop the player forward in short steps, stopping at cliffs / steep or unwalkable ground / indoors. ----
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<uint, float> Warping = new();
     private static System.Threading.Timer? warpTimer;
 
-    [CommandHandler("warp", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld, 0, "Fast travel outdoors: while you run forward the server hops you ahead in short steps. /warp [step 5-60, default 25], /warp off", "[step|off]")]
+    [CommandHandler("warp", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld, 0, "Fast travel outdoors: while you run forward the server hops you ahead in short steps. /warp [step 5-20000, default 60], /warp off", "[step|off]")]
     public static void HandleWarp(Session session, params string[] parameters)
     {
         var player = session?.Player;
@@ -134,16 +84,16 @@ public class PatchClass(BasicMod mod, string settingsName = "Settings.json") : B
             session.Network.EnqueueSend(new GameMessageSystemChat("Warp off.", ChatMessageType.Broadcast));
             return;
         }
-        var step = 25f;
+        var step = 60f;
         if (parameters.Length > 0 && !float.TryParse(parameters[0], out step))
         {
-            session.Network.EnqueueSend(new GameMessageSystemChat("Usage: /warp [step 5-60] | /warp off", ChatMessageType.Broadcast));
+            session.Network.EnqueueSend(new GameMessageSystemChat("Usage: /warp [step 5-20000] | /warp off", ChatMessageType.Broadcast));
             return;
         }
-        step = Math.Clamp(step, 5f, 60f);
+        step = Math.Clamp(step, 5f, 20000f);
         Warping[guid] = step;
         warpTimer ??= new System.Threading.Timer(_ => WarpTick(), null, 150, 150);
-        session.Network.EnqueueSend(new GameMessageSystemChat($"Warp on: {step} units per hop while running forward, outdoors only, stops at cliffs. /warp off to stop.", ChatMessageType.Broadcast));
+        session.Network.EnqueueSend(new GameMessageSystemChat($"Warp on: {step} units per hop while running forward, outdoors only, ignores cliffs and hills. /warp off to stop.", ChatMessageType.Broadcast));
         ModManager.Log($"{Tag} warp on for {player.Name} step {step}");
     }
 
@@ -159,66 +109,19 @@ public class PatchClass(BasicMod mod, string settingsName = "Settings.json") : B
                 try
                 {
                     if (player.Teleporting || player.Location.Indoors) return;
-                    var mi = player.PhysicsObj?.MovementManager?.MotionInterpreter;
-                    if (mi == null || mi.InterpretedState.ForwardCommand != (uint)MotionCommand.RunForward) return;
+                    var fwd = player.CurrentMotionState?.MotionState?.ForwardCommand ?? MotionCommand.Ready;
+                    if (fwd != MotionCommand.RunForward && fwd != MotionCommand.WalkForward) return;   // only while moving forward
 
-                    // walk the path in 4-unit samples; stop before the first bad one
-                    var prevZ = player.Location.PositionZ;
-                    Position? good = null;
-                    for (var d = 4f; d <= step + 0.01f; d += 4f)
-                    {
-                        var p = player.Location.InFrontOf(d);
-                        p.LandblockId = new LandblockId(p.GetCell());
-                        if (p.Indoors) break;
-                        var z = p.GetTerrainZ();
-                        if (!p.IsWalkable() || Math.Abs(z - prevZ) > 3f) break;
-                        p.PositionZ = z + 0.5f;
-                        prevZ = z;
-                        good = p;
-                    }
-                    if (good != null) player.Teleport(good);
+                    // no path checks: the hop goes straight ahead and lands on the ground (through hills, cliffs and tunnels), never indoors
+                    var good = player.Location.InFrontOf(step);
+                    good.LandblockId = new LandblockId(good.GetCell());
+                    if (good.Indoors) return;
+                    good.PositionZ = good.GetTerrainZ() + 0.5f;
+                    player.Teleport(good);
                 }
                 catch (Exception ex) { ModManager.Log($"{Tag} warp tick: {ex.Message}", ModManager.LogLevel.Warn); }
             }).EnqueueChain();
         }
-    }
-
-    // ---- /leap: Hulk jump. Launches the player along a ballistic arc; fall damage is suppressed for the flight. ----
-    [CommandHandler("leap", AccessLevel.Admin, CommandHandlerFlag.RequiresWorld, 0, "Hulk leap: launch yourself in an arc in the direction you face (be standing still on the ground). /leap [power 0.2-1.0, default 1] - range about 250 units at 1.0", "[power]")]
-    public static void HandleLeap(Session session, params string[] parameters)
-    {
-        var player = session?.Player;
-        if (player == null) return;
-        var power = 1f;
-        if (parameters.Length > 0 && !float.TryParse(parameters[0], out power))
-        {
-            session.Network.EnqueueSend(new GameMessageSystemChat("Usage: /leap [power 0.2-1.0]", ChatMessageType.Broadcast));
-            return;
-        }
-        power = Math.Clamp(power, 0.2f, 1f);
-        var v = 35f * power;                    // 45 degrees, speed ~49.5 < the 50 cap; range about v*v/gravity*... ~250 at 1.0
-        var wasInvincible = player.Invincible;
-        new ActionChain(player, () =>
-        {
-            var po = player.PhysicsObj;
-            if (po == null) return;
-            player.Invincible = true;           // the landing would otherwise do ~150 fall damage
-            po.TransientState &= ~(TransientStateFlags.Contact | TransientStateFlags.WaterContact);
-            po.calc_acceleration();
-            po.set_on_walkable(false);
-            po.set_local_velocity(new System.Numerics.Vector3(0, v, v), false);
-            po.MovementManager?.MotionInterpreter?.PendingMotions.Clear();
-            po.IsAnimating = false;
-            var movementData = new MovementData(player) { IsAutonomous = true, MovementType = MovementType.Invalid };
-            movementData.Invalid = new MovementInvalid(movementData);
-            player.EnqueueBroadcast(new GameMessageUpdateMotion(player, movementData));
-            player.EnqueueBroadcast(new GameMessageVectorUpdate(player));
-            ModManager.Log($"{Tag} leap {player.Name} v={v}");
-        }).EnqueueChain();
-        var restore = new ActionChain(player, () => { });
-        restore.AddDelaySeconds(15);
-        restore.AddAction(player, () => { player.Invincible = wasInvincible; });
-        restore.EnqueueChain();
     }
 
     private static string Describe(Player p)
