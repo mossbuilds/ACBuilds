@@ -56,3 +56,23 @@ Every build is released as `<ACE version>-acb.<n>` (e.g. `v1.78.4816-acb.2`) on 
 Built into the server image: [CustomClothingBase](https://github.com/OptimShi/CustomClothingBase) and the ACE.Web mod from [ACE.Mods.WebAPI](https://github.com/ACEmulator/ACE.Mods.WebAPI). Loaded into the world database: [ACEUniqueWeenies](https://github.com/titaniumweiner/ACEUniqueWeenies). Mods are built from source; one that fails to build is skipped (look for `MOD SKIPPED` in the build log).
 
 **Windows "is not digitally signed" error:** files from a downloaded ZIP are blocked by PowerShell. Use `run.cmd` (and `acb.cmd` for backup/restore/update), which bypass that for one run, or unblock once with `Get-ChildItem -Recurse | Unblock-File` in the extracted folder.
+
+## Self-contained launcher (no Python needed)
+
+Every release has a single-file program that does what `run.*` and `acb.*` do: installs Docker if missing, starts both containers, prints the IP and port, and handles backup/restore/update.
+
+| OS | Download from the release |
+|---|---|
+| Windows | `acbuilds-windows-x64.exe` |
+| Linux | `acbuilds-linux-x64` (then `chmod +x`) |
+| macOS (Apple silicon) | `acbuilds-macos-arm64` (then `chmod +x`) |
+
+```
+acbuilds                 # start (put your DAT files in acbuilds-data/dats, or pass --dats DIR)
+acbuilds backup [--all]
+acbuilds restore FILE.sql.gz
+acbuilds update [server|db|all]
+acbuilds status | logs | down | version
+```
+
+Source: `launcher/acblauncher.py` (Python standard library only; run it with `python launcher/acblauncher.py` on any system).

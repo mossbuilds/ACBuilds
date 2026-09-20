@@ -131,3 +131,31 @@ jobs:
 
           - ACE: https://github.com/ACEmulator/ACE/commit/${{ needs.check.outputs.ace_sha }}
           - World data: ${{ needs.check.outputs.world_tag }}"
+  # Self-contained launcher executables (Python + PyInstaller), one per OS, attached to the same versioned release.
+  launcher:
+    needs: [check, build]
+    if: needs.check.outputs.build == 'true'
+    strategy:
+      matrix:
+        include:
+          - { os: windows-latest, asset: acbuilds-windows-x64.exe, dist: acbuilds.exe }
+          - { os: ubuntu-latest,  asset: acbuilds-linux-x64,       dist: acbuilds }
+          - { os: macos-latest,   asset: acbuilds-macos-arm64,     dist: acbuilds }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build executable
+        shell: bash
+        run: |
+          pip install pyinstaller
+          echo 'VERSION = "${{ needs.check.outputs.version }}"' > launcher/_version.py
+          cd launcher && pyinstaller --onefile --name acbuilds --paths . acblauncher.py
+          cp dist/${{ matrix.dist }} ../${{ matrix.asset }}
+      - name: Attach to release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ needs.check.outputs.version }}" "${{ matrix.asset }}" --clobber

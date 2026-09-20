@@ -3,3 +3,8 @@ backups/
 mods/
 content/
 .build.log
+launcher/_version.py
+launcher/build/
+launcher/dist/
+*.spec
+__pycache__/
