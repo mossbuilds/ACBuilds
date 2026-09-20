@@ -8,7 +8,7 @@ Put your AC client DAT files (`client_cell_1.dat`, `client_portal.dat`, `client_
 
 | OS | Command |
 |---|---|
-| Windows (PowerShell, as admin) | `.\run.ps1` (or `.\run.ps1 -Dats D:\ac\dats`) |
+| Windows | double-click `run.cmd` (or in a terminal: `.un.cmd`, or `.un.cmd -Dats D:cdats`) |
 | macOS | `chmod +x run.sh && ./run.sh` |
 | Linux | `chmod +x run.sh && ./run.sh` |
 
@@ -54,3 +54,5 @@ Every build is released as `<ACE version>-acb.<n>` (e.g. `v1.78.4816-acb.2`) on 
 
 ## Included mods and content
 Built into the server image: [CustomClothingBase](https://github.com/OptimShi/CustomClothingBase) and the ACE.Web mod from [ACE.Mods.WebAPI](https://github.com/ACEmulator/ACE.Mods.WebAPI). Loaded into the world database: [ACEUniqueWeenies](https://github.com/titaniumweiner/ACEUniqueWeenies). Mods are built from source; one that fails to build is skipped (look for `MOD SKIPPED` in the build log).
+
+**Windows "is not digitally signed" error:** files from a downloaded ZIP are blocked by PowerShell. Use `run.cmd` (and `acb.cmd` for backup/restore/update), which bypass that for one run, or unblock once with `Get-ChildItem -Recurse | Unblock-File` in the extracted folder.
