@@ -7,9 +7,9 @@
 Triggers: a push to `main`, a manual run (`workflow_dispatch`, optional *force*), and a **poll every 30 minutes**. GitHub cannot webhook from repos we don't own, so polling is how upstream changes are noticed.
 
 **Job `check`** (about 5 seconds):
-1. Read the latest commit of `ACEmulator/ACE` `master`, the latest release tag of `ACEmulator/ACE-World-16PY-Patches`, and the latest commit of each watched repo (table below). The `Thwargle/ACE` master commit is part of the fingerprint too. Hash them into a *fingerprint*.
-2. Read the fingerprint stored as a label on the published `acbuilds-server:latest` image.
-3. Same fingerprint and not a push/force run: **stop, nothing is built.** Otherwise build.
+1. Read the latest commit of `ACEmulator/ACE` `master`, the latest release tag of `ACEmulator/ACE-World-16PY-Patches`, and the latest commit of each watched repo (table below). Hash them into **two fingerprints**: a *stock* one (ACE master, world data, watched repos) and a *VR* one (`Thwargle/ACE` master, world data, watched repos).
+2. Read the stock fingerprint from the published `acbuilds-server:latest` image and the VR fingerprint from `acbuilds-vr-server:latest`.
+3. Each side is compared on its own: an update to `Thwargle/ACE` rebuilds **only the VR images**, an update to `ACEmulator/ACE` rebuilds **only the stock images**, and a change to the world data or a watched repo rebuilds both. Nothing changed and not a push/force run: **stop, nothing is built.**
 4. Version = latest ACE release tag + our revision, e.g. `v1.78.4816-acb.2` (revision = how many `-acb.` tags already exist for that ACE version, plus one).
 
 **Job `build`** (only if `check` says so): builds and pushes the server image, the database image, the VR server image and the VR database image (same Dockerfiles, `ACE_REPO`/`ACE_REF` pointed at `Thwargle/ACE`), then creates a GitHub release and git tag with the version and both image links.

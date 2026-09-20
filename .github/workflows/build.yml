@@ -39,11 +39,14 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       build: ${{ steps.cmp.outputs.build }}
+      build_stock: ${{ steps.cmp.outputs.build_stock }}
+      build_vr: ${{ steps.cmp.outputs.build_vr }}
       ace_sha: ${{ steps.up.outputs.ace_sha }}
       vr_sha: ${{ steps.up.outputs.vr_sha }}
       version: ${{ steps.up.outputs.version }}
       world_tag: ${{ steps.up.outputs.world_tag }}
       fingerprint: ${{ steps.up.outputs.fingerprint }}
+      vr_fingerprint: ${{ steps.up.outputs.vr_fingerprint }}
     steps:
       - name: Resolve upstream state
         id: up
@@ -65,19 +68,26 @@ jobs:
           echo "vr_sha=$vr" >> "$GITHUB_OUTPUT"
           echo "ace_sha=$ace" >> "$GITHUB_OUTPUT"
           echo "world_tag=$world" >> "$GITHUB_OUTPUT"
-          echo "fingerprint=$(echo "$ace $vr $world $extra" | sha256sum | cut -c1-16)" >> "$GITHUB_OUTPUT"
-      - name: Compare with published image
+          echo "fingerprint=$(echo "$ace $world $extra" | sha256sum | cut -c1-16)" >> "$GITHUB_OUTPUT"
+          echo "vr_fingerprint=$(echo "$vr $world $extra" | sha256sum | cut -c1-16)" >> "$GITHUB_OUTPUT"
+      - name: Compare with published images
         id: cmp
         run: |
           echo "${{ github.token }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
-          old=$(docker buildx imagetools inspect "$IMAGE-server:latest" --format '{{json .Image.Config.Labels}}' 2>/dev/null | jq -r '."acbuilds.fingerprint" // ""' || true)
+          label() { docker buildx imagetools inspect "$1" --format '{{json .Image.Config.Labels}}' 2>/dev/null | jq -r --arg k "$2" '.[$k] // ""' || true; }
+          old=$(label "$IMAGE-server:latest" acbuilds.fingerprint)
+          oldvr=$(label "$IMAGE-vr-server:latest" acbuilds.vr.fingerprint)
           new="${{ steps.up.outputs.fingerprint }}"
-          echo "published=$old upstream=$new"
-          if [ "${{ github.event_name }}" = "push" ] || [ "${{ inputs.force }}" = "true" ] || [ "$old" != "$new" ]; then
-            echo "build=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "build=false" >> "$GITHUB_OUTPUT"
-          fi
+          newvr="${{ steps.up.outputs.vr_fingerprint }}"
+          echo "stock: published=$old upstream=$new | vr: published=$oldvr upstream=$newvr"
+          force=false
+          if [ "${{ github.event_name }}" = "push" ] || [ "${{ inputs.force }}" = "true" ]; then force=true; fi
+          bs=false; bv=false
+          if [ "$force" = true ] || [ "$old" != "$new" ]; then bs=true; fi
+          if [ "$force" = true ] || [ "$oldvr" != "$newvr" ]; then bv=true; fi
+          echo "build_stock=$bs" >> "$GITHUB_OUTPUT"
+          echo "build_vr=$bv" >> "$GITHUB_OUTPUT"
+          if [ "$bs" = true ] || [ "$bv" = true ]; then echo "build=true" >> "$GITHUB_OUTPUT"; else echo "build=false" >> "$GITHUB_OUTPUT"; fi
 
   build:
     needs: check
@@ -92,6 +102,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Build and push server image
+        if: needs.check.outputs.build_stock == 'true'
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -109,6 +120,7 @@ jobs:
           cache-from: type=gha,scope=server
           cache-to: type=gha,mode=max,scope=server
       - name: Build and push database image
+        if: needs.check.outputs.build_stock == 'true'
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -126,6 +138,7 @@ jobs:
           cache-from: type=gha,scope=db
           cache-to: type=gha,mode=max,scope=db
       - name: Build and push VR server image
+        if: needs.check.outputs.build_vr == 'true'
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -138,12 +151,14 @@ jobs:
           labels: |
             org.opencontainers.image.version=${{ needs.check.outputs.version }}
             acbuilds.vr.ace=${{ needs.check.outputs.vr_sha }}
+            acbuilds.vr.fingerprint=${{ needs.check.outputs.vr_fingerprint }}
           tags: |
             ${{ env.IMAGE }}-vr-server:latest
             ${{ env.IMAGE }}-vr-server:${{ needs.check.outputs.version }}
           cache-from: type=gha,scope=vr-server
           cache-to: type=gha,mode=max,scope=vr-server
       - name: Build and push VR database image
+        if: needs.check.outputs.build_vr == 'true'
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -164,16 +179,27 @@ jobs:
       - name: Tag and release
         env:
           GH_TOKEN: ${{ github.token }}
+          BUILT_STOCK: ${{ needs.check.outputs.build_stock }}
+          BUILT_VR: ${{ needs.check.outputs.build_vr }}
         run: |
           v="${{ needs.check.outputs.version }}"
-          gh release create "$v" --target "$(git rev-parse HEAD)" --title "ACBuilds $v" --notes "Server: \`docker pull ${{ env.IMAGE }}-server:$v\`
+          notes=""
+          if [ "$BUILT_STOCK" = true ]; then
+            notes="$notes
+          Server: \`docker pull ${{ env.IMAGE }}-server:$v\`
           Database: \`docker pull ${{ env.IMAGE }}-db:$v\`
+          - ACE: https://github.com/ACEmulator/ACE/commit/${{ needs.check.outputs.ace_sha }}"
+          fi
+          if [ "$BUILT_VR" = true ]; then
+            notes="$notes
           VR server (separate, from Thwargle/ACE): \`docker pull ${{ env.IMAGE }}-vr-server:$v\` and \`docker pull ${{ env.IMAGE }}-vr-db:$v\`
-          Packages: https://github.com/${{ github.repository }}/pkgs/container/acbuilds-server , https://github.com/${{ github.repository }}/pkgs/container/acbuilds-db
-
-          - ACE: https://github.com/ACEmulator/ACE/commit/${{ needs.check.outputs.ace_sha }}
-          - VR ACE fork: https://github.com/Thwargle/ACE/commit/${{ needs.check.outputs.vr_sha }}
+          - VR ACE fork: https://github.com/Thwargle/ACE/commit/${{ needs.check.outputs.vr_sha }}"
+          fi
+          notes="$notes
+          Packages: https://github.com/${{ github.repository }}/pkgs/container/acbuilds-server , https://github.com/${{ github.repository }}/pkgs/container/acbuilds-vr-server
           - World data: ${{ needs.check.outputs.world_tag }}"
+          gh release create "$v" --target "$(git rev-parse HEAD)" --title "ACBuilds $v" --notes "$notes"
+
   # Self-contained launcher executables (Python + PyInstaller), one per OS, attached to the same versioned release.
   launcher:
     needs: [check, build]
