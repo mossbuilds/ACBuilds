@@ -159,6 +159,8 @@ class App(tk.Tk):
              ("Uninstall server", lambda: self.do_uninstall("server")),
              ("Uninstall database (+backup)", lambda: self.do_uninstall("db")),
              ("Uninstall all", lambda: self.do_uninstall("all"))],
+            [("Install VR server (2nd server, port 9100)", lambda: self.do_install("vr")),
+             ("Uninstall VR server (+backup)", lambda: self.do_uninstall("vr"))],
         ]
         for i, row in enumerate(rows_of_buttons):
             bar = ttk.Frame(f)
@@ -404,7 +406,7 @@ class App(tk.Tk):
         self.work(lambda: (L.ensure_docker(), L.compose("down")), "Server stopped.")
 
     def do_install(self, what):
-        names = {"server": "the server only", "db": "the database only"}
+        names = {"server": "the server only", "db": "the database only", "vr": "the VR server"}
         if what == "db" or self.dats_dir():
             self.work(lambda: L.cmd_install(self.args(what=what)), f"Installed {names[what]}.")
         else:
@@ -418,6 +420,8 @@ class App(tk.Tk):
                   "(acbuilds-data\\backups) and kept. The server will be stopped, because it cannot run without its database.",
             "all": "Remove the ACBuilds server AND database (containers, images, database data).\n\nA backup of accounts and "
                    "characters is saved first (acbuilds-data\\backups) and kept.",
+            "vr": "Remove ONLY the VR server, its own database and their images.\n\nA backup of the VR server's accounts and "
+                  "characters is saved first (acbuilds-data\\backups) and kept. The stock server is not touched.",
         }[what]
         if not messagebox.askyesno("Uninstall", text + "\n\nYour Asheron's Call client and DAT files are NOT touched.\n\nContinue?",
                                    icon="warning"):

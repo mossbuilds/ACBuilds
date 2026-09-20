@@ -10,14 +10,20 @@ This project only provides the **server and database**. You install the game cli
 
 ## Playing in VR (AC:VR, PC VR or native Quest)
 
-There is an existing community VR client, **AC:VR** by Thwargle: <http://thwargle.com/unreal-vr/> (PC VR through SteamVR, or native Quest 3). It is a separate download, it needs your own retail DAT files, and it connects to ACE servers, including ours.
+There is an existing community VR client, **AC:VR** by Thwargle: <http://thwargle.com/unreal-vr/> (PC VR through SteamVR, or native Quest 3). It is a separate download and needs your own retail DAT files.
 
+**A second, VR-enabled server.** AC:VR's tracked hands, physical combat and VR-aimed spells need the authors' VR-enabled ACE fork, [Thwargle/ACE](https://github.com/Thwargle/ACE). ACBuilds builds it as its **own separate server**: its own images (`acbuilds-vr-server`, `acbuilds-vr-db`), its own database and volume, on **port 9100**. It never replaces or touches the stock server on port 9000, and both can run at the same time.
+
+- Install and start it: `acbuilds install vr` (or the **Install VR server** button, or `docker compose --profile vr up -d`).
+- Back up, update, remove: `acbuilds backup --vr`, `acbuilds update vr`, `acbuilds uninstall vr` (the last one saves a backup first).
+- The VR server's accounts are separate from the stock server's.
+
+**Steps**
 1. Install AC:VR from the link above (Windows setup for PC VR; the Quest installer for a standalone headset).
-2. Start our server (`acbuilds` launcher, or `docker compose up -d`).
-3. In AC:VR's login screen add a custom server: host = `127.0.0.1` (same PC) or this PC's LAN IP (native Quest, over Wi-Fi), port `9000`, type **ACE**. Add an account and press Launch.
-4. Note from the AC:VR authors: tracked hands/head, physical combat and VR-aimed spells need their **VR-enabled ACE server**. A stock ACE server (which is what the ACBuilds image builds today) supports login and normal play, not those extensions. Ask in their Discord for the VR-enabled server source if you want the full experience.
+2. Start the VR server (above).
+3. In AC:VR's login screen add a custom server: host = `127.0.0.1` (same PC) or this PC's LAN IP (native Quest, over Wi-Fi), port `9100`, type **ACE**. Add an account and press Launch.
 
-The ACBuilds launcher can start it: choose **AC:VR (PC VR, SteamVR)** in Step 1 (or `acbuilds play --client-type acvr`). It finds your AC:VR install (the "AC VR (SteamVR)" shortcut or `AC-VR.bat`), checks that SteamVR is the OpenXR runtime, starts SteamVR if it is not running, then starts AC:VR and tells you the server address to add. Connect your headset (Quest: Link or Air Link) before you click. AC:VR asks for the account inside its own login screen.
+The ACBuilds launcher can do all of it: choose **AC:VR (PC VR, SteamVR)** in Step 1 (or `acbuilds play --client-type acvr`). It starts the VR server (not the stock one), finds your AC:VR install (the "AC VR (SteamVR)" shortcut or `AC-VR.bat`), checks that SteamVR is the OpenXR runtime, starts SteamVR if it is not running, starts AC:VR, and tells you the address to add. Connect your headset (Quest: Link or Air Link) before you click. AC:VR asks for the account inside its own login screen.
 
 ## Quick start (auto-installs Docker if missing)
 

@@ -27,6 +27,8 @@ env:
   # Upstream repos watched. ACE core + world data drive the image; the others are recorded in the
   # image label so a change in any of them triggers a rebuild too.
   ACE_REPO: ACEmulator/ACE
+  # VR-enabled ACE fork; built as a SECOND, separate server (never replaces the stock one)
+  VR_ACE_REPO: Thwargle/ACE
   WORLD_REPO: ACEmulator/ACE-World-16PY-Patches
   WATCHED: >-
     aquafir/ACE.BaseMod shemtar-90/AceForge OptimShi/CustomClothingBase
@@ -38,6 +40,7 @@ jobs:
     outputs:
       build: ${{ steps.cmp.outputs.build }}
       ace_sha: ${{ steps.up.outputs.ace_sha }}
+      vr_sha: ${{ steps.up.outputs.vr_sha }}
       version: ${{ steps.up.outputs.version }}
       world_tag: ${{ steps.up.outputs.world_tag }}
       fingerprint: ${{ steps.up.outputs.fingerprint }}
@@ -58,9 +61,11 @@ jobs:
           acev=$(gh api repos/$ACE_REPO/releases/latest --jq .tag_name)
           n=$(gh api "repos/${{ github.repository }}/git/matching-refs/tags/${acev}-acb." --jq 'length' 2>/dev/null || echo 0)
           echo "version=${acev}-acb.$((n+1))" >> "$GITHUB_OUTPUT"
+          vr=$(gh api repos/$VR_ACE_REPO/commits/master --jq .sha)
+          echo "vr_sha=$vr" >> "$GITHUB_OUTPUT"
           echo "ace_sha=$ace" >> "$GITHUB_OUTPUT"
           echo "world_tag=$world" >> "$GITHUB_OUTPUT"
-          echo "fingerprint=$(echo "$ace $world $extra" | sha256sum | cut -c1-16)" >> "$GITHUB_OUTPUT"
+          echo "fingerprint=$(echo "$ace $vr $world $extra" | sha256sum | cut -c1-16)" >> "$GITHUB_OUTPUT"
       - name: Compare with published image
         id: cmp
         run: |
@@ -120,6 +125,42 @@ jobs:
             ${{ env.IMAGE }}-db:${{ needs.check.outputs.version }}
           cache-from: type=gha,scope=db
           cache-to: type=gha,mode=max,scope=db
+      - name: Build and push VR server image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.server
+          push: true
+          build-args: |
+            ACE_REPO=https://github.com/${{ env.VR_ACE_REPO }}.git
+            ACE_REF=${{ needs.check.outputs.vr_sha }}
+            MODS_REV=${{ needs.check.outputs.fingerprint }}
+          labels: |
+            org.opencontainers.image.version=${{ needs.check.outputs.version }}
+            acbuilds.vr.ace=${{ needs.check.outputs.vr_sha }}
+          tags: |
+            ${{ env.IMAGE }}-vr-server:latest
+            ${{ env.IMAGE }}-vr-server:${{ needs.check.outputs.version }}
+          cache-from: type=gha,scope=vr-server
+          cache-to: type=gha,mode=max,scope=vr-server
+      - name: Build and push VR database image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.db
+          push: true
+          build-args: |
+            ACE_REPO=https://github.com/${{ env.VR_ACE_REPO }}.git
+            ACE_REF=${{ needs.check.outputs.vr_sha }}
+            WORLD_TAG=${{ needs.check.outputs.world_tag }}
+            MODS_REV=${{ needs.check.outputs.fingerprint }}
+          labels: |
+            org.opencontainers.image.version=${{ needs.check.outputs.version }}
+          tags: |
+            ${{ env.IMAGE }}-vr-db:latest
+            ${{ env.IMAGE }}-vr-db:${{ needs.check.outputs.version }}
+          cache-from: type=gha,scope=vr-db
+          cache-to: type=gha,mode=max,scope=vr-db
       - name: Tag and release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -127,9 +168,11 @@ jobs:
           v="${{ needs.check.outputs.version }}"
           gh release create "$v" --target "$(git rev-parse HEAD)" --title "ACBuilds $v" --notes "Server: \`docker pull ${{ env.IMAGE }}-server:$v\`
           Database: \`docker pull ${{ env.IMAGE }}-db:$v\`
+          VR server (separate, from Thwargle/ACE): \`docker pull ${{ env.IMAGE }}-vr-server:$v\` and \`docker pull ${{ env.IMAGE }}-vr-db:$v\`
           Packages: https://github.com/${{ github.repository }}/pkgs/container/acbuilds-server , https://github.com/${{ github.repository }}/pkgs/container/acbuilds-db
 
           - ACE: https://github.com/ACEmulator/ACE/commit/${{ needs.check.outputs.ace_sha }}
+          - VR ACE fork: https://github.com/Thwargle/ACE/commit/${{ needs.check.outputs.vr_sha }}
           - World data: ${{ needs.check.outputs.world_tag }}"
   # Self-contained launcher executables (Python + PyInstaller), one per OS, attached to the same versioned release.
   launcher:

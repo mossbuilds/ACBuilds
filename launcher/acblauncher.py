@@ -8,8 +8,8 @@ starts the ACE server + database containers, and prints the IP:port to connect t
   acbuilds backup [--all]           accounts + characters (ace_auth, ace_shard); --all adds ace_world
   acbuilds restore FILE.sql.gz
   acbuilds update [server|db|all]   backup FIRST, pull new images, redeploy
-  acbuilds install [server|db|all]
-  acbuilds uninstall [server|db|all] [--yes] [--purge]   never touches the AC client; db removal backs up first
+  acbuilds install [server|db|all|vr]    'vr' = the second, VR-enabled server (own database, port 9100)
+  acbuilds uninstall [server|db|all|vr] [--yes] [--purge]   never touches the AC client; db removal backs up first
   acbuilds version
 
 You need your own Asheron's Call client + DAT files (not included). How to install it: https://www.accpp.net/manual-installation
@@ -57,9 +57,39 @@ services:
       - ${{DATS_DIR:-./dats}}:/ace/Dats
       - ./mods:/ace/Mods
       - ./content:/ace/Content
+  ace-vr-db:
+    profiles: ["vr"]
+    image: {REGISTRY}/acbuilds-vr-db:${{ACB_TAG:-latest}}
+    container_name: ace-vr-db
+    restart: unless-stopped
+    environment:
+      INNODB_BUFFER_POOL_SIZE: ${{INNODB_BUFFER_POOL_SIZE:-2G}}
+    volumes:
+      - ace-vr-db:/var/lib/mysql
+    networks:
+      vr: {{ aliases: ["ace-db"] }}
+  ace-vr-server:
+    profiles: ["vr"]
+    image: {REGISTRY}/acbuilds-vr-server:${{ACB_TAG:-latest}}
+    container_name: ace-vr-server
+    restart: unless-stopped
+    depends_on:
+      ace-vr-db: {{ condition: service_healthy }}
+    ports:
+      - "9100:9000/udp"
+      - "9101:9001/udp"
+    volumes:
+      - ${{DATS_DIR:-./dats}}:/ace/Dats
+      - ./mods:/ace/Mods
+      - ./content:/ace/Content
+    networks: [vr]
 volumes:
   ace-db:
+  ace-vr-db:
+networks:
+  vr:
 """
+VR_PORT = 9100  # the VR-enabled ACE server (Thwargle/ACE fork) listens here; the stock server stays on 9000
 
 # next to the exe when frozen (double-click safe), else the current folder
 DATA = (Path(sys.executable).parent if getattr(sys, "frozen", False) else Path.cwd()) / "acbuilds-data"
@@ -131,12 +161,13 @@ def compose_cmd():
     sys.exit("Docker Compose is missing (it ships with Docker Desktop / get.docker.com).")
 
 
-def compose(*args, check=True, dats=None):
+def compose(*args, check=True, dats=None, vr=False):
     DATA.mkdir(exist_ok=True)
     (DATA / "docker-compose.yml").write_text(COMPOSE)
     env = dict(os.environ)
     env["DATS_DIR"] = str(dats or env.get("DATS_DIR") or (DATA / "dats"))
-    return run(compose_cmd() + ["-f", str(DATA / "docker-compose.yml"), "--project-directory", str(DATA), *args],
+    prefix = ["--profile", "vr"] if vr else []  # VR services only exist when asked for; stock commands never touch them
+    return run(compose_cmd() + ["-f", str(DATA / "docker-compose.yml"), "--project-directory", str(DATA), *prefix, *args],
                check=check, env=env)
 
 
@@ -166,12 +197,12 @@ def save_cfg(cfg):
     CONFIG.write_text(json.dumps(cfg, indent=2))
 
 
-def wait_open(timeout=240):
+def wait_open(timeout=240, container="ace-server"):
     """Block until ACE logs that the world is open, so the client does not launch into a closed server."""
     print("Waiting for the server to open the world...", end="", flush=True)
     end = time.time() + timeout
     while time.time() < end:
-        r = run(["docker", "logs", "ace-server"], check=False, capture=True)
+        r = run(["docker", "logs", container], check=False, capture=True)
         if "World is now open" in (r.stdout or "") + (r.stderr or ""):
             print(" open.")
             return True
@@ -308,9 +339,9 @@ def launch_acvr(a):
         print(f"Could not start AC:VR: {e}")
         return False
     ip = lan_ip()
-    print("\nIn AC:VR's login screen add a custom server:  host 127.0.0.1 (this PC)  port 9000  type ACE")
+    print(f"\nIn AC:VR's login screen add a custom server:  host 127.0.0.1 (this PC)  port {VR_PORT}  type ACE")
     print(f"(from another device on your network use {ip}); then add your account and press Launch.")
-    print("Note: VR combat/tracked hands need the VR-enabled ACE server; stock ACE supports login and normal play.")
+    print("This is the VR-enabled ACE server (a second server; the stock one on port 9000 is untouched).")
     return True
 
 
@@ -363,14 +394,17 @@ def launch_client(a, host="127.0.0.1"):
 
 def cmd_play(a):
     ensure_docker()
-    wait_open()
+    if (getattr(a, "client_type", None) or load_cfg().get("client_type")) == "acvr":
+        wait_open(container="ace-vr-server")
+    else:
+        wait_open()
     launch_client(a)
 
 
-def pull_with_retry(dats=None, tries=8, service=None):
+def pull_with_retry(dats=None, tries=8, service=None, vr=False):
     """Slow or flaky connections drop mid-download ('unexpected EOF'); Docker keeps finished layers, so retrying resumes."""
     for i in range(1, tries + 1):
-        if compose(*(["pull", service] if service else ["pull"]), check=False, dats=dats).returncode == 0:
+        if compose(*(["pull", service] if service else ["pull"]), check=False, dats=dats, vr=vr).returncode == 0:
             return True
         print(f"Download interrupted (attempt {i}/{tries}); retrying - finished layers are kept...")
         time.sleep(5)
@@ -385,6 +419,18 @@ def db_running():
     return r.returncode == 0 and "true" in (r.stdout or "")
 
 
+def install_vr(dats):
+    """Second server: the VR-enabled ACE fork with its OWN database, on port 9100. The stock stack is not touched."""
+    print("[2/4] Downloading the VR server and its database (separate from the stock server)...")
+    for s in ("ace-vr-db", "ace-vr-server"):
+        if not pull_with_retry(dats, service=s, vr=True):
+            sys.exit(f"Could not pull {s}.")
+    print("[3/4] Starting the VR server and database...")
+    compose("up", "-d", "ace-vr-server", dats=dats, vr=True)
+    wait_healthy("ace-vr-db")
+    print(f"[4/4] VR server started. Connect VR clients to  {lan_ip()}  port {VR_PORT}  (same PC: 127.0.0.1 port {VR_PORT}).")
+
+
 def cmd_install(a):
     """Install just one part: 'server' (the ACE container) or 'db' (the pre-seeded MariaDB), or both."""
     ensure_docker()
@@ -392,6 +438,9 @@ def cmd_install(a):
     dats = Path(getattr(a, "dats", None) or load_cfg().get("dats") or DATA / "dats").expanduser().resolve()
     for d in ("dats", "mods", "content", "backups"):
         (DATA / d).mkdir(parents=True, exist_ok=True)
+    if what == "vr":
+        install_vr(dats)
+        return
     services = {"server": ["ace-server"], "db": ["ace-db"], "all": ["ace-db", "ace-server"]}[what]
     print(f"[2/4] Downloading: {', '.join(services)}...")
     for s in services:
@@ -411,11 +460,38 @@ def cmd_install(a):
     print("[4/4] Done.")
 
 
+def uninstall_vr(a):
+    """Remove ONLY the second (VR) server + its database. The stock server and its data are never touched."""
+    if not getattr(a, "yes", False):
+        if not (sys.stdin and sys.stdin.isatty()):
+            sys.exit("Run with --yes to confirm the uninstall.")
+        print("This removes the VR server, its own database and their images (a backup is saved first).\n"
+              "The stock server, your AC client and DAT files are NOT touched.")
+        if input("Type YES to continue: ").strip() != "YES":
+            sys.exit("Cancelled.")
+    r = run(["docker", "inspect", "-f", "{{.State.Running}}", "ace-vr-db"], check=False, capture=True)
+    if r.returncode == 0 and "true" in (r.stdout or ""):
+        print("[1/3] Saving a backup of the VR server's accounts and characters first...")
+        do_backup(container="ace-vr-db", tag="ace-vr")  # exits (stopping the uninstall) if the backup fails
+    else:
+        print("[1/3] VR database is not running - no backup taken.")
+    print("[2/3] Removing the VR containers, images and database volume...")
+    compose("rm", "-sf", "ace-vr-server", "ace-vr-db", check=False, vr=True)
+    for img in ("acbuilds-vr-server", "acbuilds-vr-db"):
+        run(["docker", "rmi", "-f", f"{REGISTRY}/{img}:latest"], check=False, capture=True)
+    run(["docker", "volume", "rm", "acbuilds_ace-vr-db"], check=False, capture=True)
+    print("[3/3] Done. The stock server and your AC client / DAT files were not touched; "
+          f"backups are kept in {DATA / 'backups'}.")
+
+
 def cmd_uninstall(a):
     """Remove the server, the database, or both from Docker. NEVER touches the AC client or any DAT files.
     Removing the database always saves a backup of accounts and characters first."""
     ensure_docker()
     what = getattr(a, "what", "all")
+    if what == "vr":
+        uninstall_vr(a)
+        return
     label = {"server": "the ACBuilds server container and image (the database is kept)",
              "db": "the ACBuilds database container, image and data (a backup is saved first; the server will stop)",
              "all": "the ACBuilds server and database containers, their images and the database data (a backup is saved first)"}[what]
@@ -466,6 +542,14 @@ def cmd_up(a):
         sys.exit(f"Put your AC client DAT files (client_cell_1.dat, client_portal.dat, client_highres.dat, "
                  f"client_local_English.dat) in:\n  {dats}\nthen run again (or pass --dats DIR).\n"
                  f"Don't have the game client yet? How to install it: {AC_CLIENT_HELP}\nOr use the open-source OpenAC client (you still supply the DAT files): {OPENAC_URL}")
+    vr_mode = (getattr(a, "client_type", None) or load_cfg().get("client_type")) == "acvr"
+    if vr_mode:
+        install_vr(dats)
+        if not getattr(a, "no_client", False):
+            print("Waiting for the VR world to open, then starting AC:VR...")
+            wait_open(container="ace-vr-server")
+            launch_client(a)
+        return
     print("[2/4] Downloading the server and database images (first time is a few hundred MB)...")
     if not pull_with_retry(dats):
         sys.exit("Could not pull the images after several tries (are you online, and are the ghcr.io/mossbuilds packages public?).")
@@ -489,11 +573,11 @@ def dexec(args, stdin=None, capture=False):
     return run(["docker", "exec", *(["-i"] if stdin else []), "ace-db", *args], check=False, stdin=stdin, capture=capture)
 
 
-def do_backup(all_dbs=False):
+def do_backup(all_dbs=False, container="ace-db", tag="ace"):
     dbs = ["ace_auth", "ace_shard"] + (["ace_world"] if all_dbs else [])
     (DATA / "backups").mkdir(parents=True, exist_ok=True)
-    f = DATA / "backups" / f"ace-{datetime.datetime.now():%Y%m%d-%H%M%S}.sql.gz"
-    p = subprocess.run(["docker", "exec", "ace-db", "mariadb-dump", "-h127.0.0.1", f"-u{DB_PASS[0]}", f"-p{DB_PASS[1]}",
+    f = DATA / "backups" / f"{tag}-{datetime.datetime.now():%Y%m%d-%H%M%S}.sql.gz"
+    p = subprocess.run(["docker", "exec", container, "mariadb-dump", "-h127.0.0.1", f"-u{DB_PASS[0]}", f"-p{DB_PASS[1]}",
                         "--single-transaction", "--databases", *dbs], capture_output=True)
     if p.returncode != 0 or len(p.stdout) < 1000:
         sys.exit(f"Backup FAILED: {p.stderr.decode(errors='replace')[:300]}")
@@ -503,17 +587,17 @@ def do_backup(all_dbs=False):
     return f
 
 
-def load_sql(f):
+def load_sql(f, container="ace-db"):
     data = gzip.open(f, "rb").read() if str(f).endswith(".gz") else Path(f).read_bytes()
-    p = subprocess.run(["docker", "exec", "-i", "ace-db", "mariadb", "-h127.0.0.1", f"-u{DB_PASS[0]}", f"-p{DB_PASS[1]}"],
+    p = subprocess.run(["docker", "exec", "-i", container, "mariadb", "-h127.0.0.1", f"-u{DB_PASS[0]}", f"-p{DB_PASS[1]}"],
                        input=data, capture_output=True)
     if p.returncode != 0:
         sys.exit(f"Restore FAILED: {p.stderr.decode(errors='replace')[:300]}")
 
 
-def wait_healthy():
+def wait_healthy(container="ace-db"):
     for _ in range(120):
-        r = run(["docker", "inspect", "-f", "{{.State.Health.Status}}", "ace-db"], check=False, capture=True)
+        r = run(["docker", "inspect", "-f", "{{.State.Health.Status}}", container], check=False, capture=True)
         if r.stdout.strip() == "healthy":
             return
         time.sleep(3)
@@ -534,6 +618,14 @@ def cmd_restore(a):
 def cmd_update(a):
     ensure_docker()
     what = a.what
+    if what == "vr":  # new images for the VR stack; its database volume is kept as is (accounts and characters stay)
+        do_backup(container="ace-vr-db", tag="ace-vr")
+        for s in ("ace-vr-db", "ace-vr-server"):
+            if not pull_with_retry(service=s, vr=True):
+                sys.exit(f"Could not pull {s}.")
+        compose("up", "-d", "ace-vr-server", vr=True)
+        print("VR server updated.")
+        return
     backup = do_backup()  # always first; exits here if it fails
     if what == "server":
         if not pull_with_retry():
@@ -568,13 +660,14 @@ def main():
         s.add_argument("--account"); s.add_argument("--password")
     sub.add_parser("down"); sub.add_parser("status"); sub.add_parser("logs"); sub.add_parser("version")
     un = sub.add_parser("uninstall", help="remove the server, the database or both (never the AC client)")
-    un.add_argument("what", nargs="?", default="all", choices=["server", "db", "all"])
+    un.add_argument("what", nargs="?", default="all", choices=["server", "db", "all", "vr"])
     un.add_argument("--yes", action="store_true"); un.add_argument("--purge", action="store_true")
     ins = sub.add_parser("install", help="install just the server, just the database, or both")
-    ins.add_argument("what", nargs="?", default="all", choices=["server", "db", "all"]); ins.add_argument("--dats")
+    ins.add_argument("what", nargs="?", default="all", choices=["server", "db", "all", "vr"]); ins.add_argument("--dats")
     b = sub.add_parser("backup"); b.add_argument("--all", action="store_true")
+    b.add_argument("--vr", action="store_true", help="back up the VR server's database instead of the stock one")
     r = sub.add_parser("restore"); r.add_argument("file")
-    up = sub.add_parser("update"); up.add_argument("what", nargs="?", default="all", choices=["server", "db", "all"])
+    up = sub.add_parser("update"); up.add_argument("what", nargs="?", default="all", choices=["server", "db", "all", "vr"])
     if len(sys.argv) == 1:
         try:
             if IS_WIN or IS_MAC or os.environ.get("DISPLAY"):
@@ -607,7 +700,7 @@ def main():
     elif a.cmd == "install":
         cmd_install(a)
     elif a.cmd == "backup":
-        ensure_docker(); do_backup(a.all)
+        ensure_docker(); do_backup(a.all, **({"container": "ace-vr-db", "tag": "ace-vr"} if getattr(a, "vr", False) else {}))
     elif a.cmd == "restore":
         cmd_restore(a)
     elif a.cmd == "update":

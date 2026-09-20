@@ -25,5 +25,46 @@ services:
       - ${DATS_DIR:-./dats}:/ace/Dats
       - ./mods:/ace/Mods
       - ./content:/ace/Content
+  # ---- Second, separate server for VR (built from github.com/Thwargle/ACE, the VR-enabled ACE fork).
+  # Started only with:  docker compose --profile vr up -d      Clients connect to port 9100 (stock stays on 9000).
+  # It has its OWN database and volume, so the stock server and its data are never touched. Each database is
+  # reachable as "ace-db" only inside its own network, so the same Config.js works for both stacks.
+  ace-vr-db:
+    profiles: ["vr"]
+    image: ghcr.io/mossbuilds/acbuilds-vr-db:${ACB_TAG:-latest}
+    build:
+      context: .
+      dockerfile: Dockerfile.db
+      args: { ACE_REPO: "https://github.com/Thwargle/ACE.git", ACE_REF: master }
+    container_name: ace-vr-db
+    restart: unless-stopped
+    environment:
+      INNODB_BUFFER_POOL_SIZE: ${INNODB_BUFFER_POOL_SIZE:-2G}
+    volumes:
+      - ace-vr-db:/var/lib/mysql
+    networks:
+      vr: { aliases: ["ace-db"] }
+  ace-vr-server:
+    profiles: ["vr"]
+    image: ghcr.io/mossbuilds/acbuilds-vr-server:${ACB_TAG:-latest}
+    build:
+      context: .
+      dockerfile: Dockerfile.server
+      args: { ACE_REPO: "https://github.com/Thwargle/ACE.git", ACE_REF: master }
+    container_name: ace-vr-server
+    restart: unless-stopped
+    depends_on:
+      ace-vr-db: { condition: service_healthy }
+    ports:
+      - "9100:9000/udp"
+      - "9101:9001/udp"
+    volumes:
+      - ${DATS_DIR:-./dats}:/ace/Dats
+      - ./mods:/ace/Mods
+      - ./content:/ace/Content
+    networks: [vr]
 volumes:
   ace-db:
+  ace-vr-db:
+networks:
+  vr:
