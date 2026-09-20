@@ -155,11 +155,15 @@ class App(tk.Tk):
                         command=self.show_panel).pack(side="left")
         ttk.Radiobutton(srv, text="Play on a remote server:", variable=self.v_remote, value=True,
                         command=self.show_panel).pack(side="left", padx=(16, 4))
-        self.e_host = ttk.Entry(srv, textvariable=self.v_host, width=26)
+        ttk.Label(srv, text="URL").pack(side="left", padx=(2, 2))
+        self.e_host = ttk.Entry(srv, textvariable=self.v_host, width=28)
         self.e_host.pack(side="left")
-        ttk.Label(srv, text="port").pack(side="left", padx=(6, 2))
-        self.e_port = ttk.Entry(srv, textvariable=self.v_port, width=6)
+        ttk.Label(srv, text="Port").pack(side="left", padx=(8, 2))
+        self.e_port = ttk.Entry(srv, textvariable=self.v_port, width=7)
         self.e_port.pack(side="left")
+        for _e in (self.e_host, self.e_port):  # typing a URL or port means "remote"; no need to find the radio button first
+            _e.bind("<Key>", lambda _ev: (self.v_remote.set(True), self.after(1, self.show_panel)))
+            _e.bind("<FocusIn>", lambda _ev: self.v_remote.set(True))
         ttk.Label(s2, text="Ports on the public server: 9000 = normal game, 9100 = PC VR server. Remote play needs no Docker.",
                   foreground="#666").grid(row=4, column=1, sticky="w", padx=6)
         self.v_acct_hint = tk.StringVar()
@@ -210,8 +214,6 @@ class App(tk.Tk):
             else:
                 pan.grid_remove()
         remote = self.v_remote.get()
-        for e in (self.e_host, self.e_port):
-            e.state(["!disabled"] if remote else ["disabled"])
         if remote and kind == "acvr" and self.v_port.get().strip() == "9000":
             self.v_port.set("9100")
         elif remote and kind != "acvr" and self.v_port.get().strip() == "9100":
