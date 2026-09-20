@@ -1,4 +1,4 @@
-﻿# ACBuilds
+# ACBuilds
 
 Self-contained [ACE](https://github.com/ACEmulator/ACE) (Asheron's Call Emulator) image: .NET server + MariaDB with `ace_auth`, `ace_shard`, `ace_world` pre-seeded at build time. Built and published to GHCR automatically; a scheduled workflow (every 30 min) rebuilds whenever `ACEmulator/ACE`, the world-data release, or a watched tool repo changes.
 
@@ -8,7 +8,7 @@ Put your AC client DAT files (`client_cell_1.dat`, `client_portal.dat`, `client_
 
 | OS | Command |
 |---|---|
-| Windows | double-click `run.cmd` (or in a terminal: `.un.cmd`, or `.un.cmd -Dats D:cdats`) |
+| Windows | double-click `run.cmd` (or in a terminal: `.\run.cmd`, or `.\run.cmd -Dats D:\ac\dats`) |
 | macOS | `chmod +x run.sh && ./run.sh` |
 | Linux | `chmod +x run.sh && ./run.sh` |
 
