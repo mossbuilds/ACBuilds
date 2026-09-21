@@ -1,0 +1,10 @@
+{
+  "Name": "LoginGreeter",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "First-login vs returning-login greeting, online count and a /rules command, on top of ACE server_motd.",
+  "Version": "1.0.0",
+  "Enabled": true,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}

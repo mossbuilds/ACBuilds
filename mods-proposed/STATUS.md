@@ -16,3 +16,4 @@ IdleKick | READY (compiled; needs in-game test - thread safety + activity detect
 TimedMute | READY (compiled) | 2026-09-21 | Admin /mute /unmute /mutes: custom-duration mute over stock gag, JSON list, re-applied at login
 SkillRespec | READY (compiled; off by default; test on a throwaway character before enabling) | 2026-09-21 | off-by-default player /respec <skill> [confirm] via Player.ResetSkill, cooldown, pyreal cost, combat refusal
 PkNight | READY (compiled; off by default; two-character in-game test needed) | 2026-09-21 | off-by-default scheduled/manual PK window via Player.CheckPKStatusVsTarget postfix (damage rules, no status changes), announcements, Admin /pknight
+LoginGreeter | READY (compiled; edit the placeholder rules text before use) | 2026-09-21 | first-login vs returning greeting, online count, first-login tips and /rules over ACE's static server_motd; Enabled default true
