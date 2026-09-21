@@ -1,0 +1,10 @@
+{
+  "Name": "HomeStone",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "Players save a spot (/mark) and return to it (/gomark) with cooldown and combat block.",
+  "Version": "1.0.0",
+  "Enabled": true,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}
