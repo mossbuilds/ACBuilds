@@ -1,0 +1,10 @@
+{
+  "Name": "ServerPulse",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "Read-only /pulse admin health snapshot: online count, loaded landblocks, busiest landblocks.",
+  "Version": "1.0.0",
+  "Enabled": true,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}
