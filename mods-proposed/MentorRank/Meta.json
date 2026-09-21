@@ -1,0 +1,10 @@
+{
+  "Name": "MentorRank",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "Off-by-default light mentoring: a mentor invites a low-level apprentice; capped rewards to the mentor at the apprentice's milestone levels.",
+  "Version": "1.0.0",
+  "Enabled": true,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}
