@@ -1,0 +1,10 @@
+{
+  "Name": "PkNight",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "Scheduled or manual PK windows via damage rules; off by default.",
+  "Version": "1.0.0",
+  "Enabled": true,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}
