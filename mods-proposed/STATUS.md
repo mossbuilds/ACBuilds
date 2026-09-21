@@ -18,3 +18,6 @@ SkillRespec | READY (compiled; off by default; test on a throwaway character bef
 PkNight | READY (compiled; off by default; two-character in-game test needed) | 2026-09-21 | off-by-default scheduled/manual PK window via Player.CheckPKStatusVsTarget postfix (damage rules, no status changes), announcements, Admin /pknight
 LoginGreeter | READY (compiled; edit the placeholder rules text before use) | 2026-09-21 | first-login vs returning greeting, online count, first-login tips and /rules over ACE's static server_motd; Enabled default true
 ServerPulse | READY (compiled) | 2026-09-21 | read-only Sentinel /pulse [top]: online count, loaded/dormant landblocks, busiest landblocks by players/creatures
+WorldBoss | READY (compiled; off by default; boss reward uncapped setting default 0 - keep small) | 2026-09-21 | event: /worldboss start|stop|status spawns ONE boss creature, announces, names top damager, optional pyreal reward, schedule off by default
+KillRace | READY (compiled; off by default; reward capped by RewardCap) | 2026-09-21 | event: /killrace start|stop|status, player /racetop, timed kill-count contest with announcements and capped reward
+TreasureHunt | READY (compiled; off by default; reward capped by MaxRewardPyreals) | 2026-09-21 | event: riddle hunt via /hunt, /hint gives distance bands only, first player in radius wins; no world objects

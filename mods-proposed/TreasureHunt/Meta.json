@@ -1,0 +1,10 @@
+{
+  "Name": "TreasureHunt",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "Riddle-and-location hunt with no world objects: first player to reach the spot wins a small pyreal reward.",
+  "Version": "1.0.0",
+  "Enabled": true,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}

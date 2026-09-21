@@ -1,0 +1,10 @@
+{
+  "Name": "KillRace",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "Timed monster-kill contest: /killrace (Admin), /racetop.",
+  "Version": "1.0.0",
+  "Enabled": true,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}

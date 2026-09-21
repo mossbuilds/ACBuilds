@@ -1,0 +1,10 @@
+{
+  "Name": "WorldBoss",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "Admin or scheduled world boss: one creature at a time, announced, top-damage reward. OFF by default.",
+  "Version": "1.0.0",
+  "Enabled": true,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}
