@@ -1,0 +1,10 @@
+{
+  "Name": "PetSpells",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "Player-owned minions periodically cast an existing spell at their target and/or on their owner. Off by default.",
+  "Version": "1.0.0",
+  "Enabled": true,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}
