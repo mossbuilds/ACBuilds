@@ -1,0 +1,5 @@
+{
+  "Enabled": false,
+  "Allowlist": ["statcard","top","mark","gomark","raiseskel","minions","dismiss","order","path","unstick","decay","bugnote","serverrules","restartwhen","rules","autoloot","buffme","lastdeath","hint","racetop","burst"],
+  "DescriptionOverrides": {}
+}

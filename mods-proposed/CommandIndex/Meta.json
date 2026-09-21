@@ -1,0 +1,10 @@
+{
+  "Name": "CommandIndex",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "Read-only /modhelp command listing the allowlisted player commands this server's mods add, with a one-line help each.",
+  "Version": "1.0.0",
+  "Enabled": false,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}
