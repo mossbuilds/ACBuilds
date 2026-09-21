@@ -1,0 +1,10 @@
+{
+  "Name": "MinionCleanup",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "Destroys RaiseSkeleton minions when their owner logs out, dies, teleports away or is offline. OFF by default.",
+  "Version": "1.0.0",
+  "Enabled": true,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}
