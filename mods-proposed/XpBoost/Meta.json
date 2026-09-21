@@ -1,0 +1,10 @@
+{
+  "Name": "XpBoost",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "Configurable XP multiplier for kills and quests, with a level cap and an admin toggle.",,
+  "Version": "1.0.0",
+  "Enabled": true,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}

@@ -1,0 +1,20 @@
+# ACE mod ideas (ACBuilds)
+
+Verification: Player_Death.cs (OnDeath, Die, InflictVitaePenalty, CalculateDeathItems, GetNumItemsDropped, HandlePKDeathBroadcast, ThreadSafeTeleportOnDeath) and Player_Xp.cs (EarnXP, GrantXP, GrantLevelProportionalXp, SpendXP, RefundXP) verified via raw GitHub. Mods folder holds IHarmonyMod, ModManager, ModContainer, ModCommands, ModHelpers, ModMetadata (verified listing; BasicMod/BasicPatch API taken from local PatchClass.cs). Everything else marked UNVERIFIED must be checked in source before coding. WebSearch of forums/other mods was not done. Rules: no speed/velocity mods (client-side); no mods that add many world objects (Quest memory).
+
+Common style: [HarmonyPatch] class : BasicPatch<Settings>, [CommandHandler(name, AccessLevel, CommandHandlerFlag.RequiresWorld, paramCount, desc, usage)], PlayerManager.GetOnlinePlayer, ActionChain(player, ...).EnqueueChain(), GameMessageSystemChat.
+
+1. XpBoost (feas 5) - Configurable XP multiplier (per-level tiers, weekend event). Postfix/prefix on Player.EarnXP(long, XpType, ShareType) scaling amount by Settings.Multiplier. Cmds: /xpboost [x] (Admin). Settings: Multiplier, MaxLevel, XpTypes affected. Risks: double counting via GrantXP (which calls EarnXP? check); prefix arg change with ref long amount.
+2. GentleDeath (feas 5) - Softer death: fewer dropped items, reduced vitae. Postfix on Player.GetNumItemsDropped(Corpse) (return __result, cap), prefix on InflictVitaePenalty(int) to scale amount. Settings: MaxItemsDropped, VitaeAmount, ProtectPlayerCorpseOnly. Risks: balance; PK paths.
+3. WhereIsEveryone / PlayerFinder (feas 5) - Admin /who with location, level, landblock; /gotoplayer via player.Teleport(target.Location), /bring. Uses PlayerManager.GetAllOnline (UNVERIFIED name; existing code uses GetOnlinePlayer). Settings: none. Risks: minimal.
+4. AnnounceEvents (feas 4) - Scheduled server broadcasts and timed XP/loot events (System.Threading.Timer + PlayerManager.BroadcastToAll (UNVERIFIED)). Cmds: /event start|stop name. Settings: schedule list. Risks: timer threading; wrap in ActionChain.
+5. HomeStone / SetHome (feas 4) - /sethome saves player.Location to a settings JSON/DB property; /home teleports with cooldown, blocked in combat (player.LastPkAttackTimestamp / IsPKType UNVERIFIED). Settings: CooldownSeconds, AllowIndoors. Risks: teleport into invalid cell; use Teleport(Position).
+6. SafeTutorZone / PkGuard (feas 3) - Disable PvP damage in configured landblocks by prefixing Player.TakeDamage / Creature damage path (UNVERIFIED exact method; inspect Player_Combat.cs). Settings: landblock list. Risks: skipping original with prefix returning false; hard to test.
+7. AutoLoot / PickupRadius (feas 3) - /autoloot: on corpse open (Corpse.Open / Container.Open UNVERIFIED) move items to pack via player.TryCreateInInventoryWithNetworking. Settings: filters (pyreals, trade notes). Risks: pack full, races.
+8. Buffbot Command (feas 4) - /buffme casts standard buff list via player.CreateSingleSpell / EnchantmentManager (UNVERIFIED); cooldown, free or cost. Settings: spell ids, cost. Risks: spell id correctness, balance.
+9. Leaderboard (feas 4) - /top shows level/XP/kills from PlayerManager.GetAllPlayers (UNVERIFIED) plus kill tally via postfix on Player.OnDeath/Creature.Die. Settings: size. Risks: offline players load cost, cache.
+10. AdminAudit (feas 5) - Log every admin command and spawn to a file. Patch CommandManager.ParseCommand (UNVERIFIED) prefix, or use own [CommandHandler]s. Settings: log path. Risks: none.
+11. DeathReport (feas 5) - Postfix Player.OnDeath: broadcast fun message, log location, optional /lastdeath teleports player to death location (store Position from Location at Die). Settings: broadcast on/off. Risks: spam.
+12. RestartWarn / Maintenance (feas 4) - /restartin N broadcasts countdowns then calls shutdown (ServerManager.Shutdown UNVERIFIED) and blocks logins in the window. Settings: warn intervals. Risks: shutdown API must be checked.
+
+Ranking is by usefulness times feasibility; 1-3 and 10-11 are the best first builds.
