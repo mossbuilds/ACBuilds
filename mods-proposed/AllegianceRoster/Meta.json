@@ -1,0 +1,10 @@
+{
+  "Name": "AllegianceRoster",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "/roster prints the caller's own allegiance tree in chat: monarch, patron, vassal count, member count, who is online, and each member's level.",
+  "Version": "1.0.0",
+  "Enabled": false,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}
