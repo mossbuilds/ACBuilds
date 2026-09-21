@@ -1,0 +1,10 @@
+{
+  "Name": "DecayClock",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "Player skeleton minions slowly crumble (health drain, then destroy) while away from a configurable nexus. OFF by default.",
+  "Version": "1.0.0",
+  "Enabled": true,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}

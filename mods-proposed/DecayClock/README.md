@@ -1,0 +1,6 @@
+# DecayClock
+Source only, not compiled or deployed. Necromancer flavour (rules section 7: undead decay, halted near a dark-mana nexus, worse in sunlight). Does not spawn, clean up or steer minions (RaiseSkeleton / MinionCleanup / PetSpells / MinionOrders do); it only ages them.
+A sweep timer (>= 10 s) finds CombatPets in MinionWcids owned by online players; per pet guid it keeps accumulated decay seconds in memory (lost on restart). Outside the Nexus (same landblock, sphere of Radius around X/Y/Z) decay accrues; inside it is halted. DaylightMultiplier != 1 scales decay while Timers.CurrentInGameTime.IsDaytime (ACE.Server.Entity.Timers, ACE.Common.DerethDateTime). Each sweep an ActionChain on the pet clamps health to the remaining-life share via Creature.UpdateVital (a plain vital write, no damage event) and destroys the pet at DecayMinutesToDeath. The owner gets chat warnings at WarnAtPercent.
+Command: /decay (player) lists remaining life. No DB, no world objects.
+Settings.json: Enabled false, MinionWcids [900021240], DecayMinutesToDeath 60, Nexus {Cell 0 = none, X, Y, Z, Radius 30}, DaylightMultiplier 1.0, WarnAtPercent [50,80,95], SweepSeconds 15 (min 10).
+Unverified: client health bar refresh after the direct vital write; whether IsDaytime matches the day/night players see.
