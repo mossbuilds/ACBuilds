@@ -1,0 +1,10 @@
+{
+  "Name": "PathChoice",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "/path: pick one character path (Necromancer, Rogue, ...) stored as an ACE quest stamp; other mods and emotes gate on it.",
+  "Version": "1.0.0",
+  "Enabled": false,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}

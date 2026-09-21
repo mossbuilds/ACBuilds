@@ -1,0 +1,10 @@
+{
+  "Name": "MinionOrders",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "Squad orders for RaiseSkeleton minions. OFF by default.",
+  "Version": "1.0.0",
+  "Enabled": true,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}
