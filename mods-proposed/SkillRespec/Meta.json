@@ -1,0 +1,10 @@
+{
+  "Name": "SkillRespec",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "Off-by-default /respec <skill> [confirm]: reset one skill via ACE's Player.ResetSkill with cooldown, pyreal cost and combat refusal.",
+  "Version": "1.0.0",
+  "Enabled": true,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}
