@@ -1,0 +1,10 @@
+{
+  "Name": "PkGuard",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "Blocks player-versus-player damage in configured landblocks.",
+  "Version": "1.0.0",
+  "Enabled": true,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}
