@@ -1,0 +1,10 @@
+{
+  "Name": "Leaderboard",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "Player /top: highest levels and top monster killers.",
+  "Version": "1.0.0",
+  "Enabled": true,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}
