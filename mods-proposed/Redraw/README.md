@@ -1,0 +1,6 @@
+# Redraw (proposed, not deployed, not compiled)
+/redraw (Player) re-sends the objects around you to YOUR client; /redrawplayer <name> (Admin) does it for an online player. Off by default (Enabled=false). (redraw/refresh/resync/fixview/redrawplayer not in %TEMP%\cmds.txt.)
+Re-send: `player.PhysicsObj.ObjMaint.GetKnownObjectsValues()` (ACE.Server.Physics.Common.ObjectMaint) then `PhysicsObj.enqueue_objs(list)` (ACE.Server.Physics; the same call Player.cs uses for /adminvision) which calls Player.TrackObject(wo, true) = CreateObject to that one client (delayed automatically if a teleport was recent). Then WorldObject.SendUpdatePosition() (EnqueueBroadcast of UpdatePosition, no move).
+Limits: refused if PKTimerActive, cooldown 30 s, MaxPerHour 20, MaxObjects 300 per use. Runs in an ActionChain on the player.
+Safest subset: it only re-sends what the server ALREADY tracks. It does not clear/rebuild the known-object list (RemoveKnownObject/AddKnownObject are unsafe from a mod: they desync ObjectMaint and the inverse KnownPlayers). So it cannot fix objects the server itself never tracked (real server-side visibility bugs).
+UNVERIFIED: whether the client re-creates an object it already has (may just update it); PhysicsObj.ObjMaint field access from a mod; exact using set (no compile).

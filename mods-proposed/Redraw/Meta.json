@@ -1,0 +1,10 @@
+{
+  "Name": "Redraw",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "/redraw re-sends the objects around you to your own client (invisible NPCs/players/items fix), no teleport. Off by default.",
+  "Version": "1.0.0",
+  "Enabled": true,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}
