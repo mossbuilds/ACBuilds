@@ -1,0 +1,10 @@
+{
+  "Name": "RaiseSkeleton",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "/raise turns the nearest monster corpse into a skeleton minion (real ACE CombatPet) up to a control limit from Self; above it the skeleton is feral. /minions, /dismiss.",
+  "Version": "1.0.0",
+  "Enabled": true,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}
