@@ -1,0 +1,10 @@
+{
+  "Name": "TimedMute",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "Admin /mute name minutes [reason] with auto-unmute and a persisted list, built on the stock gag.",
+  "Version": "1.0.0",
+  "Enabled": true,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}
