@@ -1,0 +1,53 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+	<!-- Modelled on OptimShi/CustomClothingBase (MIT). Dockerfile.server builds this against the ACE binaries in the image:
+	     server/build-mod.sh rewrites the C:\ACE\Server hint paths to /ace/*.dll and the output path to /mods/HeadsetPreset. -->
+	<PropertyGroup>
+		<TargetFramework>net10.0</TargetFramework>
+		<NoWarn>0436;1073;8509</NoWarn>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+		<OutputPath>C:\ACE\Mods\$(AssemblyName)</OutputPath>
+		<AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+		<AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
+		<CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+		<PlatformTarget>x64</PlatformTarget>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<PackageReference Include="ACEmulator.ACE.Shared" Version="1.0.9" />
+		<PackageReference Include="Lib.Harmony" Version="2.3.6" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<Reference Include="ACE.Adapter"><HintPath>C:\ACE\Server\ACE.Adapter.dll</HintPath><Private>False</Private></Reference>
+		<Reference Include="ACE.Common"><HintPath>C:\ACE\Server\ACE.Common.dll</HintPath><Private>False</Private></Reference>
+		<Reference Include="ACE.Database"><HintPath>C:\ACE\Server\ACE.Database.dll</HintPath><Private>False</Private></Reference>
+		<Reference Include="ACE.DatLoader"><HintPath>C:\ACE\Server\ACE.DatLoader.dll</HintPath><Private>False</Private></Reference>
+		<Reference Include="ACE.Entity"><HintPath>C:\ACE\Server\ACE.Entity.dll</HintPath><Private>False</Private></Reference>
+		<Reference Include="ACE.Server"><HintPath>C:\ACE\Server\ACE.Server.dll</HintPath><Private>False</Private></Reference>
+		<Reference Include="Microsoft.EntityFrameworkCore"><HintPath>C:\ACE\Server\Microsoft.EntityFrameworkCore.dll</HintPath><Private>False</Private></Reference>
+	</ItemGroup>
+
+	<ItemGroup>
+		<None Update="Meta.json">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</None>
+	</ItemGroup>
+
+	<!-- ACE already provides these assemblies; do not ship copies next to the mod -->
+	<Target Name="CleanupFiles" AfterTargets="PostBuildEvent">
+		<ItemGroup>
+			<FilesToDelete Include="$(OutDir)0Harmony.dll" />
+			<FilesToDelete Include="$(OutDir)Humanizer.dll" />
+			<FilesToDelete Include="$(OutDir)ACE.*.dll" Exclude="$(OutDir)ACE.Shared.dll" />
+			<FilesToDelete Include="$(OutDir)Microsoft.*.dll" />
+			<FilesToDelete Include="$(OutDir)Mono.*.dll" />
+			<FilesToDelete Include="$(OutDir)MonoMod.*.dll" />
+			<FilesToDelete Include="$(OutDir)System.*.dll" Exclude="$(OutDir)System.Text.*.dll" />
+			<FilesToDelete Include="$(OutDir)*.deps.json" />
+			<FilesToDelete Include="$(OutDir)*.pdb" />
+		</ItemGroup>
+		<Delete Files="@(FilesToDelete)" />
+	</Target>
+</Project>

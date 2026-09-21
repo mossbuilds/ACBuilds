@@ -1,0 +1,10 @@
+{
+  "Name": "HeadsetPreset",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "Admin /headset: read-only report of the server properties that affect load, with the ACE-supported way to change them. Changes nothing. Off by default.",
+  "Version": "1.0.0",
+  "Enabled": true,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}
