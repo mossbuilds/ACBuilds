@@ -1,0 +1,10 @@
+{
+  "Name": "AutoLoot",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "Opt-in: opening a monster corpse moves coins, trade notes and gems into your pack.",
+  "Version": "1.0.0",
+  "Enabled": true,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}

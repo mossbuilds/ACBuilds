@@ -5,3 +5,4 @@ WhereIsEveryone | READY (compiled) | 2026-09-20 | admin /who2, /gotoplayer, /bri
 AnnounceEvents | READY (compiled) | 2026-09-20 | scheduled broadcasts, admin /announce start|stop|say
 HomeStone | READY (compiled) | 2026-09-20 | player /mark and /gomark with cooldown, PK-timer block
 PkGuard | READY (compiled) | 2026-09-21 | blocks PvP damage in listed landblocks via Player.TakeDamage prefix, admin /pkguard
+AutoLoot | READY (compiled) | 2026-09-21 | opt-in /autoloot: Corpse.Open postfix moves coins/notes/gems to pack
