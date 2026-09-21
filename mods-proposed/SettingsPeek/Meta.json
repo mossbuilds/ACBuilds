@@ -1,0 +1,10 @@
+{
+  "Name": "SettingsPeek",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "Read-only /serverrules command showing a fixed allowlist of harmless gameplay properties (rates, PK rules).",
+  "Version": "1.0.0",
+  "Enabled": false,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}

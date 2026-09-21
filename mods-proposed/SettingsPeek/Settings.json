@@ -1,0 +1,6 @@
+{
+  "Enabled": false,
+  "BoolKeys": ["pk_server", "pk_server_safe_training_academy", "quest_info_enabled", "fellow_quest_bonus"],
+  "LongKeys": ["pk_timer", "fellowship_even_share_level"],
+  "DoubleKeys": ["xp_modifier", "quest_xp_modifier", "luminance_modifier", "trophy_drop_rate", "cantrip_drop_rate", "aetheria_drop_rate", "rare_drop_rate_percent", "vitae_penalty", "pk_respite_timer", "quest_mindelta_rate"]
+}
