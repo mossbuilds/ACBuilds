@@ -1,0 +1,10 @@
+{
+  "Name": "BuffBot",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "Player /buffme: casts a short list of time-limited self buffs, with a cooldown. Off by default.",
+  "Version": "1.0.0",
+  "Enabled": true,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}

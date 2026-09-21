@@ -6,3 +6,4 @@ AnnounceEvents | READY (compiled) | 2026-09-20 | scheduled broadcasts, admin /an
 HomeStone | READY (compiled) | 2026-09-20 | player /mark and /gomark with cooldown, PK-timer block
 PkGuard | READY (compiled) | 2026-09-21 | blocks PvP damage in listed landblocks via Player.TakeDamage prefix, admin /pkguard
 AutoLoot | READY (compiled) | 2026-09-21 | opt-in /autoloot: Corpse.Open postfix moves coins/notes/gems to pack
+BuffBot | READY (compiled) | 2026-09-21 | player /buffme: level-6 self buffs, cooldown, off by default
