@@ -1,0 +1,10 @@
+{
+  "Name": "CorpseBurst",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "Player /burst: destroys the nearest lootable monster corpse and casts an existing ring/arc war spell. Off by default.",
+  "Version": "1.0.0",
+  "Enabled": true,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}
