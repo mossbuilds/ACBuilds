@@ -1,0 +1,10 @@
+{
+  "Name": "AmbushStrike",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "Bonus damage multiplier on a player's hits against creatures that have not noticed them (sneak-attack approximation).",
+  "Version": "1.0.0",
+  "Enabled": true,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}
