@@ -1,0 +1,10 @@
+{
+  "Name": "RentReminder",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "Tells a house owner, at login and via /rent, that their own house rent is due soon. Read-only.",
+  "Version": "1.0.0",
+  "Enabled": true,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}
