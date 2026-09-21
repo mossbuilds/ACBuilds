@@ -1,0 +1,10 @@
+{
+  "Name": "StuckRescue",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "/unfreeze frees a player stuck in geometry: nudge to nearest walkable outdoor spot, or recall to their sanctuary. Off by default.",
+  "Version": "1.0.0",
+  "Enabled": true,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}
