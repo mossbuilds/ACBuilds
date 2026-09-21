@@ -1,0 +1,10 @@
+{
+  "Name": "BugNote",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "Players leave short bug notes with /bugnote; admins list and clear them. Stores name, time, landblock and text only.",
+  "Version": "1.0.0",
+  "Enabled": true,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}
