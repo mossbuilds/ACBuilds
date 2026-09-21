@@ -9,3 +9,4 @@ AutoLoot | READY (compiled) | 2026-09-21 | opt-in /autoloot: Corpse.Open postfix
 BuffBot | READY (compiled) | 2026-09-21 | player /buffme: level-6 self buffs, cooldown, off by default
 Leaderboard | READY (compiled) | 2026-09-21 | player /top: top levels via PlayerManager.GetAllPlayers plus monster-kill tally (Creature.OnDeath postfix, JSON file)
 AdminAudit | READY (compiled; fixed out-param attribute) | 2026-09-21 | logs Advocate+ in-game commands to file via CommandManager.GetCommandHandler postfix, redacts password commands
+DeathReport | READY (compiled) | 2026-09-21 | broadcasts fun line on player death, deaths.log, player /lastdeath returns to death spot

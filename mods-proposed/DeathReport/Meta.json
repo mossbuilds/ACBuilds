@@ -1,0 +1,10 @@
+{
+  "Name": "DeathReport",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "Fun world broadcast on player death, death log, and /lastdeath to return to where you died.",
+  "Version": "1.0.0",
+  "Enabled": true,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}
