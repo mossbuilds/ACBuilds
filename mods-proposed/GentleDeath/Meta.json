@@ -1,0 +1,10 @@
+{
+  "Name": "GentleDeath",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "Softer death: caps dropped items and vitae penalty.",
+  "Version": "1.0.0",
+  "Enabled": true,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}
