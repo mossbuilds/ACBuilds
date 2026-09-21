@@ -1,0 +1,10 @@
+{
+  "Name": "StatCard",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "/statcard prints a readable one-screen summary of your own character in chat.",
+  "Version": "1.0.0",
+  "Enabled": true,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}

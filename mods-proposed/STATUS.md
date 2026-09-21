@@ -23,3 +23,4 @@ KillRace | READY (compiled; off by default; reward capped by RewardCap) | 2026-0
 TreasureHunt | READY (compiled; off by default; reward capped by MaxRewardPyreals) | 2026-09-21 | event: riddle hunt via /hunt, /hint gives distance bands only, first player in radius wins; no world objects
 HotspotAlert | READY (compiled; off by default; timer only starts if Enabled at load - restart to enable) | 2026-09-21 | throttled admin whispers when a landblock holds too many creatures/players, Sentinel /hotspots, read-only, no files
 TriviaNight | READY (compiled; off by default; questions trimmed to 9 - review lore/wording before enabling; prize capped by MaxPyreals) | 2026-09-21 | event: /trivia start|stop|status, first correct chat answer wins a round via Player.HandleActionTalk postfix, scoreboard, optional capped prize
+StatCard | READY (compiled) | 2026-09-21 | player /statcard: caller's own level/XP/attributes/vitals/skills; read-only, no files
