@@ -1,0 +1,10 @@
+{
+  "Name": "WhereIsEveryone",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "Admin player finder: list online players with level and location, teleport to or bring a player.",
+  "Version": "1.0.0",
+  "Enabled": true,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}
