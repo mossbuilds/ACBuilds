@@ -1,0 +1,10 @@
+{
+  "Name": "TradeLedger",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "Admin audit trail of completed player-to-player trades (character names, items, pyreals, time, landblock).",
+  "Version": "1.0.0",
+  "Enabled": true,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}
