@@ -1,0 +1,10 @@
+{
+  "Name": "RestartWarn",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "Extra warnings and a /restartwhen query for shutdowns that ACE itself schedules. Never shuts anything down.",
+  "Version": "1.0.0",
+  "Enabled": true,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}
