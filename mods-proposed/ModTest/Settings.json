@@ -1,0 +1,16 @@
+{
+  "Enabled": false,
+  "ExpectedMods": ["RaiseSkeleton","MinionCleanup","MinionOrders","PathChoice","StatCard","CommandIndex","ServerPulse","Redraw","StuckRescue","DecayClock"],
+  "ExpectedCommands": {
+    "RaiseSkeleton": ["raiseskel","minions","dismiss"],
+    "PathChoice": ["path"],
+    "StatCard": ["statcard"],
+    "CommandIndex": ["modhelp"],
+    "Redraw": ["redraw","redrawplayer"],
+    "StuckRescue": ["unstick","unstickplayer"],
+    "DecayClock": ["decay"],
+    "MinionOrders": ["order"]
+  },
+  "RequiredWeenies": [900021240, 900021241, 48942, 900021232, 900021227],
+  "BoolProperties": ["world_closed"]
+}

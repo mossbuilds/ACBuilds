@@ -1,0 +1,10 @@
+{
+  "Name": "ModTest",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "Admin /modtest: read-only PASS/FAIL/SKIP self-checks of the custom mods (loaded, commands, weenies, properties).",
+  "Version": "1.0.0",
+  "Enabled": false,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}
