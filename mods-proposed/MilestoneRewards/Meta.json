@@ -1,0 +1,10 @@
+{
+  "Name": "MilestoneRewards",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "Off-by-default small skill-credit grants at configured levels, once per character; player /milestones.",
+  "Version": "1.0.0",
+  "Enabled": true,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}
