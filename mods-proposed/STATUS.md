@@ -12,3 +12,4 @@ AdminAudit | READY (compiled; fixed out-param attribute) | 2026-09-21 | logs Adv
 DeathReport | READY (compiled) | 2026-09-21 | broadcasts fun line on player death, deaths.log, player /lastdeath returns to death spot
 RestartWarn | READY (compiled; fixed static settings access) | 2026-09-21 | extra countdown warnings for ACE-scheduled shutdowns plus player /restartwhen; read-only, never shuts down
 MilestoneRewards | READY (compiled) | 2026-09-21 | off-by-default skill credits at configured levels via Player.CheckForLevelup postfix, guid-keyed JSON, player /milestones
+IdleKick | READY (compiled; needs in-game test - thread safety + activity detection unverified) | 2026-09-21 | off-by-default idle warn then Session.LogOffPlayer; skips staff, combat, PK timer

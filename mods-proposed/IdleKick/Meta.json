@@ -1,0 +1,10 @@
+{
+  "Name": "IdleKick",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "Warns then logs off long-idle players. OFF by default; never kicks staff or players in combat.",
+  "Version": "1.0.0",
+  "Enabled": true,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}
