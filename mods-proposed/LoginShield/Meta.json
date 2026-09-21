@@ -1,0 +1,10 @@
+{
+  "Name": "LoginShield",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "Short in-memory damage immunity after entering the world; ends on timeout or the player's first attack.",
+  "Version": "1.0.0",
+  "Enabled": false,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}
