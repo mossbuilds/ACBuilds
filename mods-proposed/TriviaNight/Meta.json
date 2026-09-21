@@ -1,0 +1,10 @@
+{
+  "Name": "TriviaNight",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "Admin-run chat trivia: trivia start [rounds], first correct chat answer wins the round, scoreboard, optional capped pyreal prize.",
+  "Version": "1.0.0",
+  "Enabled": false,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}

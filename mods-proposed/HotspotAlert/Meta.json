@@ -1,0 +1,10 @@
+{
+  "Name": "HotspotAlert",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "Whispers online admins when a loaded landblock exceeds a creature or player threshold. Never spawns or deletes anything.",
+  "Version": "1.0.0",
+  "Enabled": false,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}
