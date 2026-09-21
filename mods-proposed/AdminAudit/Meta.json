@@ -1,0 +1,10 @@
+{
+  "Name": "AdminAudit",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "Logs every command run at Advocate level or above (with spawns) to a file.",
+  "Version": "1.0.0",
+  "Enabled": true,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}
