@@ -1,0 +1,10 @@
+{
+  "Name": "FellowshipShareToggle",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "/fellowshare [on|off|status] lets a fellowship leader flip XP sharing (DesiredShareXP) mid-session without disbanding and re-forming the fellowship, which is otherwise the only way to change it.",
+  "Version": "1.0.0",
+  "Enabled": false,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}
