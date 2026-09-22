@@ -1,0 +1,10 @@
+{
+  "Name": "FellowshipRejoinWindow",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "/fellowlock reports whether your fellowship is locked, and if you recently left a locked fellowship, how many of the 600-second rejoin grace window's seconds remain.",
+  "Version": "1.0.0",
+  "Enabled": false,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}
