@@ -1,0 +1,10 @@
+{
+  "Name": "FellowshipPulse",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "/fellow prints the caller's own fellowship at a glance: leader, member count, each member's level and vitals as percents, and who is online and within XP-share range.",
+  "Version": "1.0.0",
+  "Enabled": false,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}
