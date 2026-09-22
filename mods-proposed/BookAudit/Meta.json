@@ -1,0 +1,10 @@
+{
+  "Name": "BookAudit",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "Sentinel moderation log for player-written book pages (add/modify/delete) - a griefing/harassment audit trail.",
+  "Version": "1.0.0",
+  "Enabled": true,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}
