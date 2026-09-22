@@ -129,7 +129,7 @@ public class PatchClass(BasicMod mod, string settingsName = "Settings.json") : B
     private static void Speak(WorldObject npc, string text)
     {
         var name = npc.CreatureType == CreatureType.Olthoi ? npc.Name + "&" : npc.Name;
-        npc.EnqueueBroadcast(new GameMessageHearSpeech(text, name, npc.Guid.Full, ChatMessageType.Emote), npc.LocalBroadcastRange);
+        npc.EnqueueBroadcast(new GameMessageHearSpeech(text, name, npc.Guid.Full, ChatMessageType.Emote), WorldObject.LocalBroadcastRange);
     }
 
     private static void PollOutbox()
