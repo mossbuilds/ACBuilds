@@ -1,0 +1,10 @@
+{
+  "Name": "QuestFlagInspector",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "Read-only Sentinel /questflags <player>: dumps a target's full quest-flag registry to the caller's chat, closing the gap that ACE's own QuestManager.ShowQuests() only writes to the server console. Annotates each flag with times-completed, last-completed, and next-solve-time or max-solves-reached. OFF by default.",
+  "Version": "1.0.0",
+  "Enabled": true,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}
