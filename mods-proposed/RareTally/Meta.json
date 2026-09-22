@@ -1,0 +1,10 @@
+{
+  "Name": "RareTally",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "Read-only /raretally command showing the caller's lifetime per-tier rare-find counts, tracked internally by ACE's real-time-rares pity timer but never shown to the player.",
+  "Version": "1.0.0",
+  "Enabled": false,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}
