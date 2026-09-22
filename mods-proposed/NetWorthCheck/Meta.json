@@ -1,0 +1,10 @@
+{
+  "Name": "NetWorthCheck",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "Read-only player command: sums the flat Value of everything you are carrying and wearing.",
+  "Version": "1.0.0",
+  "Enabled": false,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}
