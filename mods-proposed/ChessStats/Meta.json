@@ -1,0 +1,10 @@
+{
+  "Name": "ChessStats",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "Read-only /chessrank [player] command surfacing ACE's own built-in chess Elo-style rank and win/loss record.",
+  "Version": "1.0.0",
+  "Enabled": false,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}
