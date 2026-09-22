@@ -1,0 +1,10 @@
+{
+  "Name": "AccountStash",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "A shared pyreal stash across every character on one account, keyed by Session.Account. No ace_auth/ace_shard access. Off by default.",
+  "Version": "1.0.0",
+  "Enabled": true,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}
