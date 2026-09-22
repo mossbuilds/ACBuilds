@@ -1,0 +1,10 @@
+{
+  "Name": "CraftForecast",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "/forecast previews a combine's success chance before the player commits - tool/target from the caller's last-appraised item or own inventory, using ACE's own RecipeManager chance functions read-only. No combine performed, no materials touched.",
+  "Version": "1.0.0",
+  "Enabled": false,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}
