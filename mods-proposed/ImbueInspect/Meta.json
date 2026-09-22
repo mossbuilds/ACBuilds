@@ -1,0 +1,10 @@
+{
+  "Name": "ImbueInspect",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "/imbuecheck lists, in plain English, which imbued effects (crit strike, crippling blow, the rending types, and the rest of the flag set) are set on your last-appraised weapon.",
+  "Version": "1.0.0",
+  "Enabled": false,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}
