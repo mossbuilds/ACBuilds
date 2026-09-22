@@ -1,0 +1,10 @@
+{
+  "Name": "PKLiteZone",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "Opt-in /pklite on|off switches a player to retail's no-loss PKLite mode while inside admin-configured landblocks; off by default.",
+  "Version": "1.0.0",
+  "Enabled": true,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}
