@@ -1,0 +1,10 @@
+{
+  "Name": "ZoneSweep",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "Scoped, confirm-gated admin bulk logoff for one landblock (a maintenance/event alternative to ACE's server-wide BootAllPlayers). OFF by default.",
+  "Version": "1.0.0",
+  "Enabled": true,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}

@@ -1,0 +1,10 @@
+{
+  "Name": "AgentDialogue",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "Lets whitelisted NPC weenies have their responses driven by an outside process over a file inbox/outbox, instead of static emotes. Off by default.",
+  "Version": "1.0.0",
+  "Enabled": true,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}
