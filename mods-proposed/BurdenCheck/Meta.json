@@ -1,0 +1,10 @@
+{
+  "Name": "BurdenCheck",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "Read-only /burden command showing current carry weight vs. capacity in plain numbers.",
+  "Version": "1.0.0",
+  "Enabled": false,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}
