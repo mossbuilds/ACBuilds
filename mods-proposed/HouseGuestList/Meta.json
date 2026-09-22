@@ -1,0 +1,10 @@
+{
+  "Name": "HouseGuestList",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "/myguests prints who is actually on the caller's own house guest list right now, and whether each has storage access, without opening the client housing panel.",
+  "Version": "1.0.0",
+  "Enabled": false,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}
