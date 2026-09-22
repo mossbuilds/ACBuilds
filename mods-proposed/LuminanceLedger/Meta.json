@@ -1,0 +1,10 @@
+{
+  "Name": "LuminanceLedger",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "Read-only /luminance command showing available/maximum luminance, percent to cap, and the active server-wide luminance multipliers.",
+  "Version": "1.0.0",
+  "Enabled": false,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}
