@@ -1,0 +1,10 @@
+{
+  "Name": "ContractTracker",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "Read-only /mycontracts: lists the caller's own tracked contracts - name, stage, and time remaining until done or repeatable. Player-facing self-service equivalent of the Sentinel-only @contract command. OFF by default.",
+  "Version": "1.0.0",
+  "Enabled": true,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}
