@@ -1,0 +1,10 @@
+{
+  "Name": "SquelchAudit",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "/squelchcheck <player> (Sentinel) reports whether a player has any active chat squelches - global filters, per-character squelches, per-account squelches - and prints the counts and the global channel mask by name. Read-only: never adds, removes, or modifies a squelch.",
+  "Version": "1.0.0",
+  "Enabled": false,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}
