@@ -1,0 +1,10 @@
+{
+  "Name": "SpellFizzleForecast",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "/fizzlecheck <spellId> previews the caller's fizzle chance for a spell before committing to the cast, using ACE's own pure fizzle-chance formula (SkillCheck.GetMagicSkillChance). Read-only: never touches the real cast-check method or its RNG roll.",
+  "Version": "1.0.0",
+  "Enabled": false,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}
