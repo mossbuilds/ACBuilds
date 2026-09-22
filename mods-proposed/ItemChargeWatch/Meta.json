@@ -1,0 +1,10 @@
+{
+  "Name": "ItemChargeWatch",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "Read-only player command: lists every equipped mana-driven item's current/max mana, lowest-first, with a warn threshold.",
+  "Version": "1.0.0",
+  "Enabled": false,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}
