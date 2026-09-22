@@ -1,0 +1,10 @@
+{
+  "Name": "AgentActions",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "Polls a file inbox for whitelisted action requests (speak / broadcast / spawn / teleport_npc) from an outside process, validates each strictly, executes only what is allowed, and logs every outcome. Off by default.",
+  "Version": "1.0.0",
+  "Enabled": true,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}
