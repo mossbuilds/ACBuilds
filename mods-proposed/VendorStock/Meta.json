@@ -1,0 +1,10 @@
+{
+  "Name": "VendorStock",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "Read-only /vendorstock: shows whether your last-appraised vendor is open for business, seconds to its next reset, default vs player-sold item counts, and whether it also restocks via the generator system. OFF by default.",
+  "Version": "1.0.0",
+  "Enabled": true,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}
