@@ -1,0 +1,10 @@
+{
+  "Name": "AllegianceOfficers",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "/officers lists the caller's allegiance officers (Speaker/Seneschal/Castellan) with their effective (custom or default) titles.",
+  "Version": "1.0.0",
+  "Enabled": false,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}
