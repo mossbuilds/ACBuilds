@@ -1,0 +1,10 @@
+{
+  "Name": "QuestChestPreview",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "/chestcheck previews whether the caller currently meets a quest-gated chest's requirement, read-only, before they travel there.",
+  "Version": "1.0.0",
+  "Enabled": false,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}
