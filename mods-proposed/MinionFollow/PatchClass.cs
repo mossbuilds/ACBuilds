@@ -55,7 +55,18 @@ public class PatchClass(BasicMod mod, string settingsName = "Settings.json") : B
                 foreach (var wo in lb.GetAllWorldObjectsForDiagnostics())
                 {
                     if (wo is not CombatPet pet || !Ours(pet, cfg)) continue;
-                    if (pet.IsDead || pet.AttackTarget != null) continue; // in combat: leave ACE's own AI alone entirely
+                    if (pet.IsDead) continue;
+
+                    // ACE bug (verified in CombatPet.FindNextTarget/HandleFindTarget): when a CombatPet's target dies
+                    // and no other monster is nearby, FindNextTarget() returns false WITHOUT clearing AttackTarget.
+                    // The dead creature stays referenced forever, so Monster_Tick's own combat-target-recheck loops
+                    // (FindNextTarget -> fail -> return) on every tick and the pet never reaches Sleep() again - and
+                    // our own "AttackTarget != null means leave it alone" check would then never fire either. Clear
+                    // it ourselves so both ACE's AI and this mod can treat the pet as idle again after a kill.
+                    if (pet.AttackTarget is Creature deadTarget && deadTarget.IsDead)
+                        pet.AttackTarget = null;
+
+                    if (pet.AttackTarget != null) continue; // still genuinely in combat: leave ACE's own AI alone entirely
 
                     var owner = PlayerManager.GetOnlinePlayer(pet.PetOwner!.Value);
                     if (owner == null || owner.Location == null || pet.Location == null) continue;

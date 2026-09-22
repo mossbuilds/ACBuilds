@@ -44,10 +44,21 @@ MinionCleanup's job (it already destroys an abandoned minion past its own `MaxDi
 - `MinionCleanup` still owns destroying an abandoned/offline-owner minion; this mod only ever tries to walk one
   closer, never destroys anything.
 
+## A second ACE bug this mod has to work around
+`CombatPet.FindNextTarget()` (called every tick once a target dies) returns `false` when there is no other nearby
+monster to retarget - but it never clears `AttackTarget`. So after a kill, with nothing else around, the pet keeps
+a stale reference to the now-dead creature forever. That has two consequences: ACE's own `Monster_Tick` loops
+uselessly on `FindNextTarget() -> fail -> return` every tick instead of ever reaching `Sleep()` again, and any mod
+(this one included) that checks "is this pet in combat?" via `AttackTarget != null` sees a false positive and
+never treats the pet as idle again - which is exactly the "kills a mob, then just stands there forever" symptom
+reported live. This mod now clears `AttackTarget` itself whenever it points at a dead creature, before deciding
+whether the pet is idle.
+
 ## Risks / untested
 - **v1 was tried live and failed**: it called `MoveToObject` once per second and never progressed it afterward, so
-  the minion just played its running animation in place. v2 (this version) adds the per-tick progress calls above;
-  it has not yet been tried live itself.
+  the minion just played its running animation in place.
+- **v2 was tried live and followed correctly on the initial raise, but stopped following again after its first kill**
+  (the dead-`AttackTarget` bug above) - v3 (this version) adds the fix; not yet tried live itself.
 - The movement calls are copied verbatim from `Pet.StartFollow`/`Pet.Tick`, but those are only ever exercised by ACE
   itself on **passive** pets - using them on a `CombatPet` is still new territory. Watch for: the minion snapping
   instead of walking smoothly, fighting with its own combat-AI movement the instant it picks up an `AttackTarget`
