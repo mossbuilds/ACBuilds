@@ -1,0 +1,10 @@
+{
+  "Name": "AllegianceMotd",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "A monarch/patron-settable message of the day for their own allegiance, shown to members at login and on demand via /amotd. ACE has no built-in equivalent.",
+  "Version": "1.0.0",
+  "Enabled": false,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}

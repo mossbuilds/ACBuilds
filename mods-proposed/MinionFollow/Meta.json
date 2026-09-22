@@ -1,0 +1,10 @@
+{
+  "Name": "MinionFollow",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "Makes RaiseSkeleton's CombatPet minions follow their owner when idle (ACE only auto-follows passive pets, not combat pets). OFF by default.",
+  "Version": "1.0.0",
+  "Enabled": true,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}
