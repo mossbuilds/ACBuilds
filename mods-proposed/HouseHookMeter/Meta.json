@@ -1,0 +1,10 @@
+{
+  "Name": "HouseHookMeter",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "/myhooks reports how many hooks the caller's own house has used vs. its usable cap, and whether the server enforces that cap at all (house_hook_limit).",
+  "Version": "1.0.0",
+  "Enabled": false,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}
