@@ -1,0 +1,10 @@
+{
+  "Name": "CorpseWatch",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "/mycorpse shows time left before your own corpse decays or opens to looting; automatic whispers at 5 and 1 minute remaining.",
+  "Version": "1.0.0",
+  "Enabled": true,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}
