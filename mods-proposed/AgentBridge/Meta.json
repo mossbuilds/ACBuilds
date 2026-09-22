@@ -1,0 +1,10 @@
+{
+  "Name": "AgentBridge",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "Local-only HTTP convenience layer over the same agent/dialogue and agent/actions files AgentDialogue and AgentActions already read/write. Opens no port unless Enabled and SharedSecret are both set. Off by default.",
+  "Version": "1.0.0",
+  "Enabled": true,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}
