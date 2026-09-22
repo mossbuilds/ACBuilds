@@ -1,0 +1,10 @@
+{
+  "Name": "VitaeStatus",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "Read-only /vitae command showing the caller's current vitae penalty percentage, XP earned back toward clearing it, and the level vitae was calculated from.",
+  "Version": "1.0.0",
+  "Enabled": false,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}
