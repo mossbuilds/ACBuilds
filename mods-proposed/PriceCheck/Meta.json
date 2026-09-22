@@ -1,0 +1,10 @@
+{
+  "Name": "PriceCheck",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "/pricecheck tells the caller what an item they hold or last appraised is worth: base Value, an estimated vendor sell price, stack size and Attuned/Bonded/Retained flags.",
+  "Version": "1.0.0",
+  "Enabled": false,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}
