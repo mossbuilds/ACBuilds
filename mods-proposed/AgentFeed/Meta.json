@@ -1,0 +1,10 @@
+{
+  "Name": "AgentFeed",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "Read-only telemetry feed for an outside AI agent: player login/logout/death to a rotating log, optional outbound webhook. No control, no world objects.",
+  "Version": "1.0.0",
+  "Enabled": true,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}
