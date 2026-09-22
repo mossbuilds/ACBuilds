@@ -1,0 +1,10 @@
+{
+  "Name": "AllegianceBanRoster",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "/allegianceban - monarch-only read-only view of the allegiance's ban list and pre-approved-vassal list.",
+  "Version": "1.0.0",
+  "Enabled": false,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}
