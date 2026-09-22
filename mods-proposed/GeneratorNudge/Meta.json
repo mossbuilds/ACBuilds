@@ -1,0 +1,10 @@
+{
+  "Name": "GeneratorNudge",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "Admin action /gennudge: force-resets your last-appraised generator via WorldObject.ResetGenerator(), the public entry point Round 9's GeneratorAudit found no name for. DESTROYS every object the generator currently has spawned, including live creatures and items - not a graceful despawn. Off by default.",
+  "Version": "1.0.0",
+  "Enabled": false,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}
