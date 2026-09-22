@@ -1,0 +1,10 @@
+{
+  "Name": "TickLagAlert",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "Whispers online staff when ACE's own ServerPerformanceMonitor reports the world tick itself is running slow. Read-only: never modifies server behavior.",
+  "Version": "1.0.0",
+  "Enabled": false,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}
