@@ -1,0 +1,10 @@
+{
+  "Name": "DefenseCheck",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "Read-only /defensecheck command showing the caller's effective melee, missile, and magic defense (the modified numbers ACE actually uses in combat resolution).",
+  "Version": "1.0.0",
+  "Enabled": false,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}
