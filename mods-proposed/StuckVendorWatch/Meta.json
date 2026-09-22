@@ -1,0 +1,10 @@
+{
+  "Name": "StuckVendorWatch",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "Read-only Sentinel scan that flags vendor NPCs whose reset cycle appears stalled (OpenForBusiness false past ResetTimestamp+ResetInterval), or that are simply closed if the timer fields can't be read. Never touches or resets a vendor.",
+  "Version": "1.0.0",
+  "Enabled": false,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}
