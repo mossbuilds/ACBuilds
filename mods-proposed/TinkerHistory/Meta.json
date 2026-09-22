@@ -1,0 +1,10 @@
+{
+  "Name": "TinkerHistory",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "/tinkerhistory lists which materials have already been tinkered into an item you hold or last appraised, and how many times each - a read-only look at the past-combines record, distinct from CraftForecast (which previews odds for a combine that has not happened yet).",
+  "Version": "1.0.0",
+  "Enabled": false,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}
