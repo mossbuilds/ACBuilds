@@ -1,0 +1,10 @@
+{
+  "Name": "ComponentPrecheck",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "/compcheck <spellId> previews whether you have the spell components a cast would consume, before you commit to the cast. Read-only: only calls the pure-read Player.HasComponentsForSpell / SpellFormula.GetRequiredComps, never the mutating Player.TryBurnComponents. No item is ever touched.",
+  "Version": "1.0.0",
+  "Enabled": false,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}
