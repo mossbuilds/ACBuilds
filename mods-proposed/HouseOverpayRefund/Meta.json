@@ -1,0 +1,10 @@
+{
+  "Name": "HouseOverpayRefund",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "Off-by-default fix for ACE issue #1723: refunds the exact overpaid pyreal-note value when a house buy/rent payment is forced to consume a whole trade note larger than the amount owed.",
+  "Version": "1.0.0",
+  "Enabled": false,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}
