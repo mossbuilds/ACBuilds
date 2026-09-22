@@ -1,0 +1,10 @@
+{
+  "Name": "EnlightenmentReady",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "Read-only /enlightencheck command previewing all 5 Enlightenment-quest requirements at once (level 275, 65 luminance-aura credits, society mastery, 25 free pack slots, <5 uses), plus current enlightenment count and next title.",
+  "Version": "1.0.0",
+  "Enabled": false,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}
