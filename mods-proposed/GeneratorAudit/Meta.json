@@ -1,0 +1,10 @@
+{
+  "Name": "GeneratorAudit",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "Read-only Sentinel scan across loaded landblocks flagging generators whose profiles have all looked unavailable for longer than ScanSeconds straight - the generator-side analogue of StuckVendorWatch. Never touches, resets, or regenerates a generator.",
+  "Version": "1.0.0",
+  "Enabled": false,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}
