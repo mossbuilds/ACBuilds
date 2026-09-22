@@ -1,0 +1,10 @@
+{
+  "Name": "ItemSetPreview",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "/itemset previews the equipment-set spells of an item you hold or last appraised: the set id, the item's own level if it has one, and every spell the set can grant at any tier.",
+  "Version": "1.0.0",
+  "Enabled": false,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}
