@@ -1,0 +1,10 @@
+{
+  "Name": "AugmentationPlanner",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "Read-only /augcheck command previewing which augmentation types the caller can still take, remaining slots per shared family cap, and current available XP.",
+  "Version": "1.0.0",
+  "Enabled": false,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}
