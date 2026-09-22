@@ -1,0 +1,10 @@
+{
+  "Name": "LootWatch",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "Read-only audit log of monster corpse opens by players outside the killer's fellowship, for ninja-loot disputes. Never blocks or changes a loot action.",
+  "Version": "1.0.0",
+  "Enabled": true,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}
