@@ -1,0 +1,10 @@
+{
+  "Name": "HouseEligibilityCheck",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "/housecheck previews whether the caller currently meets a mansion's allegiance-rank requirement, read-only, before they travel there with money in hand.",
+  "Version": "1.0.0",
+  "Enabled": false,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}
