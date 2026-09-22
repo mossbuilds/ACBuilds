@@ -13,20 +13,28 @@ monster AI (`Monster_Tick.cs`), and with no `AttackTarget` it just calls `Sleep(
 real retail CombatPet weenies too - it's an ACE/retail limitation, not something RaiseSkeleton broke.
 
 ## What this mod does
-A periodic sweep (`CheckSeconds`, default 1s - matching ACE's own passive-pet `SlowTick` cadence) looks at every
-`CombatPet` whose weenie class id is in `MinionWcids` (default `[900021240]`, RaiseSkeleton's skeleton). For a
-minion that is idle (`AttackTarget == null`, not already moving, not dead) and farther than `MinDistance` from its
-online owner, it makes the minion walk to the owner using the **same two calls** `Pet.StartFollow` uses for a
-passive pet:
-- `Creature.MoveTo(owner, GetRunRate())` - broadcasts the move-to-object motion to clients.
-- `PhysicsObj.MoveToObject(owner.PhysicsObj, movementParams)` - drives the actual server-side walk.
+A periodic tick (`CheckSeconds`, default 0.2s = 5x/second, matching ACE's own passive-pet `Tick()` cadence) looks at
+every `CombatPet` whose weenie class id is in `MinionWcids` (default `[900021240]`, RaiseSkeleton's skeleton) that
+isn't currently in combat (`AttackTarget == null`). Two things happen depending on whether the minion is already
+following:
+- **Not yet following, and farther than `MinDistance` from its online owner:** start it, using the same calls
+  `Pet.StartFollow` uses for a passive pet - `Creature.MoveTo(owner, GetRunRate())` (broadcasts the motion to
+  clients) then `PhysicsObj.MoveToObject(owner.PhysicsObj, movementParams)` (queues the server-side walk).
+- **Already following (`IsMoving == true`):** progress it, every tick, with the exact three calls `Pet.Tick` makes
+  for a passive pet - `PhysicsObj.update_object()`, `UpdatePosition_SyncLocation()`, `SendUpdatePosition()`. **This
+  part is not optional**: a `MoveToObject` call only starts the client's run animation and queues a physics-layer
+  move; nothing advances the server-side position afterward unless something keeps calling `update_object()`. For a
+  passive pet that "something" is `Pet.Tick`'s own 5x/second loop; a `CombatPet` never gets that loop while idle
+  (`Monster_Tick.cs` bails out to `Sleep()` before reaching any movement-progress code when `AttackTarget == null`).
+  Without this half, the minion visibly plays its running animation but never actually moves - the exact bug seen
+  the first time this mod was tried live.
 
 If the minion is farther than `MaxDistance`, this mod does nothing (leaves it be) rather than teleport it - that is
 MinionCleanup's job (it already destroys an abandoned minion past its own `MaxDistance`).
 
 ## Settings (Settings.json)
 `Enabled` (false), `MinionWcids` ([900021240]), `MinDistance` (4 - matches ACE's own passive-pet gap), `MaxDistance`
-(60 - matches MinionCleanup's default so the two agree), `CheckSeconds` (1.0).
+(60 - matches MinionCleanup's default so the two agree), `CheckSeconds` (0.2 - do not slow this down much; see above).
 
 ## Interactions with other mods
 - Does not touch a minion that is already moving or has an `AttackTarget` - it leaves ACE's own combat AI alone.
@@ -37,13 +45,19 @@ MinionCleanup's job (it already destroys an abandoned minion past its own `MaxDi
   closer, never destroys anything.
 
 ## Risks / untested
-- Not run in game. The movement calls are copied verbatim from `Pet.StartFollow`, but that method is only ever
-  exercised by ACE itself on **passive** pets - using it on a `CombatPet` is new territory. If the client or physics
-  layer doesn't like a CombatPet using this path, the walk may look wrong (snapping, stalled, or ignored) even
-  though the calls don't throw.
+- **v1 was tried live and failed**: it called `MoveToObject` once per second and never progressed it afterward, so
+  the minion just played its running animation in place. v2 (this version) adds the per-tick progress calls above;
+  it has not yet been tried live itself.
+- The movement calls are copied verbatim from `Pet.StartFollow`/`Pet.Tick`, but those are only ever exercised by ACE
+  itself on **passive** pets - using them on a `CombatPet` is still new territory. Watch for: the minion snapping
+  instead of walking smoothly, fighting with its own combat-AI movement the instant it picks up an `AttackTarget`
+  mid-walk, or a landblock-crossing edge case in `UpdatePosition_SyncLocation` behaving differently for a CombatPet
+  than it does for the passive pets it was written for.
 - `Player_Melee.cs`/`Vendor.cs`-style `GetCylinderDistance` was considered for the distance check but its exact
   location/signature could not be pinned down in this pass; `Location.DistanceTo` (already used by MinionCleanup)
   is used instead - fine for a "far enough to bother" check, just not identical to ACE's own follow-distance math.
 - No mana/stamina cost; the minion never tires from walking, matching how ACE's own pets behave.
+- Runs 5x/second per idle-and-following minion; fine for a handful of minions, would need throttling if a player
+  ever has many at once (RaiseSkeleton's own control-limit cap keeps this small in practice).
 
 Enable later by copying this folder to `mods/` after `check-mod.sh MinionFollow` prints `MOD OK`.

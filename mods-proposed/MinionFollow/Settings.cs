@@ -10,6 +10,7 @@ public class Settings
     public float MinDistance { get; set; } = 4f;
     /// <summary>Beyond this distance the minion is destroyed instead of endlessly chasing (matches MinionCleanup's default so the two agree).</summary>
     public float MaxDistance { get; set; } = 60f;
-    /// <summary>Seconds between follow checks. ACE's own passive-pet SlowTick runs every 1 second; keep this close to that.</summary>
-    public double CheckSeconds { get; set; } = 1.0;
+    /// <summary>Seconds between ticks. ACE's own passive-pet Tick() runs 5x/second (0.2s) to actually progress a walk in
+    /// small steps - a slower interval here just makes a following minion look laggy/jerky, it doesn't save meaningful work.</summary>
+    public double CheckSeconds { get; set; } = 0.2;
 }

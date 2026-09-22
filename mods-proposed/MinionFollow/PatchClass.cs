@@ -23,7 +23,12 @@ public class PatchClass(BasicMod mod, string settingsName = "Settings.json") : B
     {
         Cfg = SettingsContainer.Settings;
         timer?.Dispose();
-        var secs = Math.Max(0.25, Cfg.CheckSeconds);
+        // ACE's own Pet.Tick (the thing that actually progresses a passive pet's walk) runs 5x/second and every
+        // cycle calls PhysicsObj.update_object() + UpdatePosition_SyncLocation() + SendUpdatePosition() - a single
+        // MoveToObject call does nothing more than start the client's run animation; without repeating those three
+        // calls every cycle the server-side position never advances, so the minion looks like it's running in
+        // place. CheckSeconds therefore needs to be this fast, not a once-a-second decision poll.
+        var secs = Math.Max(0.1, Cfg.CheckSeconds);
         timer = new Timer(_ => Sweep(), null, (int)(secs * 1000), (int)(secs * 1000));
         ModManager.Log("[MinionFollow] ready" + (Cfg.Enabled ? "" : " (disabled in Settings.json)"));
         return base.OnWorldOpen();
@@ -50,32 +55,54 @@ public class PatchClass(BasicMod mod, string settingsName = "Settings.json") : B
                 foreach (var wo in lb.GetAllWorldObjectsForDiagnostics())
                 {
                     if (wo is not CombatPet pet || !Ours(pet, cfg)) continue;
-                    if (pet.IsDead || pet.AttackTarget != null || pet.IsMoving) continue; // in combat / already moving: leave ACE's own AI alone
+                    if (pet.IsDead || pet.AttackTarget != null) continue; // in combat: leave ACE's own AI alone entirely
 
                     var owner = PlayerManager.GetOnlinePlayer(pet.PetOwner!.Value);
                     if (owner == null || owner.Location == null || pet.Location == null) continue;
 
                     var dist = owner.Location.DistanceTo(pet.Location);
-                    if (dist <= cfg.MinDistance) continue;
-
-                    if (dist > cfg.MaxDistance) continue; // MinionCleanup's job to remove an abandoned minion, not ours to teleport it
-
                     var p = pet;
                     var o = owner;
+
+                    if (p.IsMoving)
+                    {
+                        // Already following: this is the part a single MoveToObject call does NOT do on its own.
+                        // Mirrors Pet.Tick exactly (the only place ACE calls these three together for a walking pet).
+                        new ActionChain(p, () =>
+                        {
+                            if (p.IsDestroyed || p.PhysicsObj == null) { p.IsMoving = false; return; }
+                            p.PhysicsObj.update_object();
+                            p.UpdatePosition_SyncLocation();
+                            p.SendUpdatePosition();
+                            if (p.AttackTarget != null || o.IsDestroyed || o.Location == null
+                                || o.Location.DistanceTo(p.Location) <= cfg.MinDistance)
+                                p.IsMoving = false; // arrived, or something else took over - stop progressing it here
+                        }).EnqueueChain();
+                        continue;
+                    }
+
+                    if (dist <= cfg.MinDistance) continue;
+                    if (dist > cfg.MaxDistance) continue; // MinionCleanup's job to remove an abandoned minion, not ours to teleport it
+
                     new ActionChain(p, () =>
                     {
                         if (p.IsDestroyed || p.IsDead || p.AttackTarget != null || p.IsMoving) return;
-                        if (o.IsDestroyed || o.Location == null) return;
+                        if (o.IsDestroyed || o.Location == null || p.PhysicsObj == null) return;
 
-                        // Same two calls Pet.StartFollow makes for a passive pet: broadcast the move-to-object motion,
-                        // then drive it server-side through the physics object (CombatPet has no follow logic of its own).
+                        // Same calls Pet.StartFollow makes for a passive pet: broadcast the move-to-object motion,
+                        // kick off the physics-level walk, then run one progress step immediately so it doesn't
+                        // wait a full cycle before the server-side position starts advancing (see IsMoving branch above).
                         p.IsMoving = true;
                         p.MoveTo(o, p.GetRunRate());
 
                         var mvp = new MovementParameters();
                         mvp.DistanceToObject = cfg.MinDistance;
                         mvp.WalkRunThreshold = 0.0f;
-                        p.PhysicsObj?.MoveToObject(o.PhysicsObj, mvp);
+                        p.PhysicsObj.MoveToObject(o.PhysicsObj, mvp);
+
+                        p.PhysicsObj.update_object();
+                        p.UpdatePosition_SyncLocation();
+                        p.SendUpdatePosition();
                     }).EnqueueChain();
                 }
             }
