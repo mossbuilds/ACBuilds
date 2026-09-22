@@ -1,0 +1,10 @@
+{
+  "Name": "PkStatusInfo",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "Read-only /pkstatus command showing your own PK status and remaining respite/logout-freeze timers in plain language.",
+  "Version": "1.0.0",
+  "Enabled": false,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}
