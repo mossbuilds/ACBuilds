@@ -6,6 +6,10 @@
 #   deploy.sh --recreate-db        manual: also replace the database with the new pre-seeded image (world data update),
 #                                  then restore accounts + characters from the fresh backup
 #   deploy.sh --backup             just take a backup
+#   deploy.sh --restart            recovery: no image pull, just restart the two game server containers and re-check
+#                                  that the world opens (first response to a healthcheck failure)
+#   deploy.sh --rollback <version> recovery: pin ACB_TAG=<version> (an existing GHCR tag, e.g. v1.78.4816-acb.3), pull and
+#                                  restart on that image only - compose/config files and the database are left alone
 set -euo pipefail
 APP=/opt/acbuilds
 KEEP=14                           # backups kept
@@ -14,8 +18,11 @@ exec 9>"$APP/.deploy.lock"; flock -n 9 || { echo "another deploy is running"; ex
 
 # When invoked through the SSH forced command the argument arrives in SSH_ORIGINAL_COMMAND.
 ARG="${1:-${SSH_ORIGINAL_COMMAND:-}}"
+ROLLBACK_VERSION=""
 case "$ARG" in
-  --recreate-db|--backup) MODE="$ARG"; SHA="main" ;;
+  --recreate-db|--backup|--restart) MODE="$ARG"; SHA="main" ;;
+  --rollback\ *) MODE="--rollback"; ROLLBACK_VERSION="${ARG#--rollback }"; SHA="main"
+    [[ "$ROLLBACK_VERSION" =~ ^[A-Za-z0-9._-]+$ ]] || { echo "refusing: --rollback needs a plain image tag"; exit 2; } ;;
   "") MODE=""; SHA="main" ;;
   *) [[ "$ARG" =~ ^[0-9a-f]{40}$ ]] || { echo "refusing unexpected argument"; exit 2; }; MODE=""; SHA="$ARG" ;;
 esac
@@ -37,29 +44,25 @@ if [ -z "${ACB_SELF_UPDATED:-}" ] && [ "$SHA" != "main" ]; then
   fi
   rm -f "$APP/deploy.sh.new"
 fi
+
+# A normal deploy of a specific commit is refused if that commit is on the blacklist (builds that already failed
+# post-deploy verification once). Fetched fresh from main's HEAD, never from the target sha itself - a bad sha can't
+# have blacklisted itself yet. No changes are made before this check.
+if [ "$MODE" = "" ] && [ "$SHA" != "main" ]; then
+  if curl -fsSL "https://raw.githubusercontent.com/mossbuilds/ACBuilds/main/deploy/BLACKLIST.txt" -o "$APP/.blacklist.tmp"; then
+    if grep -qx "$SHA" "$APP/.blacklist.tmp" 2>/dev/null; then
+      rm -f "$APP/.blacklist.tmp"
+      echo "REFUSING: commit $SHA is on deploy/BLACKLIST.txt (failed a previous post-deploy verification). Nothing changed."
+      exit 3
+    fi
+    rm -f "$APP/.blacklist.tmp"
+  else
+    echo "WARNING: could not fetch deploy/BLACKLIST.txt to check; proceeding anyway"
+  fi
+fi
+
 DC="docker compose -f $APP/docker-compose.yml"
 mkdir -p backups dats mods mods-vr content
-
-
-echo "== compose file from commit $SHA"
-curl -fsSL "https://raw.githubusercontent.com/mossbuilds/ACBuilds/$SHA/deploy/vps/docker-compose.yml" -o docker-compose.yml.new
-docker compose -f docker-compose.yml.new config -q && mv docker-compose.yml.new docker-compose.yml
-
-echo "== VR server config (own shard database ace_shard_vr)"
-curl -fsSL "https://raw.githubusercontent.com/mossbuilds/ACBuilds/$SHA/config/Config.js" -o config.js.new
-sed '/"Shard":/ s/"Database": *"ace_shard"/"Database": "ace_shard_vr"/' config.js.new > config-vr.js
-rm -f config.js.new
-grep -q '"ace_shard_vr"' config-vr.js || { echo "ERROR: could not derive the VR config"; exit 1; }
-
-echo "== status page (https://ace.mossbuilds.xyz/)"
-mkdir -p status/data
-for f in acb_status.py index.html; do
-  curl -fsSL "https://raw.githubusercontent.com/mossbuilds/ACBuilds/$SHA/status/$f" -o "status/$f.new" && mv "status/$f.new" "status/$f" || { rm -f "status/$f.new"; echo "WARNING: could not update status/$f"; }
-done
-sudo -n /usr/bin/systemctl restart acb-status 2>/dev/null || echo "note: acb-status service not installed or not restartable by this user"
-
-ls dats/client_portal.dat dats/client_cell_1.dat dats/client_local_English.dat >/dev/null 2>&1 \
-  || { echo "ERROR: AC DAT files missing in $APP/dats (client_portal.dat, client_cell_1.dat, client_local_English.dat)"; exit 1; }
 
 DBR="docker exec ace-db mariadb -uroot"        # root over the container's unix socket (never exposed)
 backup() {
@@ -87,8 +90,64 @@ wait_open() {
   echo "ERROR: $1 did not open its world in time"; docker logs --tail 40 "$1" 2>&1 | tail -20; return 1
 }
 
+# Pins (or unpins) the image tag docker-compose.yml's ${ACB_TAG:-latest} resolves to, via the .env file compose reads
+# from its own directory automatically. Set by --rollback; a normal deploy resets it to latest.
+set_tag() {
+  local v="$1"
+  touch .env
+  if grep -q '^ACB_TAG=' .env; then sed -i "s/^ACB_TAG=.*/ACB_TAG=$v/" .env; else echo "ACB_TAG=$v" >> .env; fi
+}
+
+# --restart and --rollback are recovery paths: they never fetch a new compose/config/status page from a commit (there is
+# no new commit involved), and never touch the database beyond --rollback's own backup.
+if [ "$MODE" = "--restart" ]; then
+  echo "== restart only: no image pull, no database change"
+  $DC restart ace-server ace-vr-server
+  wait_open ace-server
+  wait_open ace-vr-server
+  echo "== restart complete ($(date -u +%FT%TZ))"
+  exit 0
+fi
+if [ "$MODE" = "--rollback" ]; then
+  echo "== rolling back to image tag $ROLLBACK_VERSION (compose/config files and the database are left alone)"
+  backup
+  set_tag "$ROLLBACK_VERSION"
+  echo "== pulling images"
+  $DC pull
+  $DC up -d --remove-orphans
+  wait_open ace-server
+  wait_open ace-vr-server
+  docker image prune -f >/dev/null
+  echo "== rollback complete ($(date -u +%FT%TZ)) version=$ROLLBACK_VERSION"
+  exit 0
+fi
+
+echo "== compose file from commit $SHA"
+curl -fsSL "https://raw.githubusercontent.com/mossbuilds/ACBuilds/$SHA/deploy/vps/docker-compose.yml" -o docker-compose.yml.new
+docker compose -f docker-compose.yml.new config -q && mv docker-compose.yml.new docker-compose.yml
+
+echo "== VR server config (own shard database ace_shard_vr)"
+curl -fsSL "https://raw.githubusercontent.com/mossbuilds/ACBuilds/$SHA/config/Config.js" -o config.js.new
+sed '/"Shard":/ s/"Database": *"ace_shard"/"Database": "ace_shard_vr"/' config.js.new > config-vr.js
+rm -f config.js.new
+grep -q '"ace_shard_vr"' config-vr.js || { echo "ERROR: could not derive the VR config"; exit 1; }
+
+echo "== status page (https://ace.mossbuilds.xyz/)"
+mkdir -p status/data
+for f in acb_status.py index.html; do
+  curl -fsSL "https://raw.githubusercontent.com/mossbuilds/ACBuilds/$SHA/status/$f" -o "status/$f.new" && mv "status/$f.new" "status/$f" || { rm -f "status/$f.new"; echo "WARNING: could not update status/$f"; }
+done
+sudo -n /usr/bin/systemctl restart acb-status 2>/dev/null || echo "note: acb-status service not installed or not restartable by this user"
+
+ls dats/client_portal.dat dats/client_cell_1.dat dats/client_local_English.dat >/dev/null 2>&1 \
+  || { echo "ERROR: AC DAT files missing in $APP/dats (client_portal.dat, client_cell_1.dat, client_local_English.dat)"; exit 1; }
+
 backup
 [ "$MODE" = "--backup" ] && exit 0
+
+# A normal deploy always goes back to :latest - otherwise a pin left by an earlier --rollback would keep every later
+# deploy on the old images forever.
+set_tag latest
 
 echo "== pulling images"
 $DC pull

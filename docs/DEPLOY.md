@@ -26,11 +26,32 @@ Repository secrets (Settings > Secrets and variables > Actions): `VPS_HOST`, `VP
 ## One-time VPS setup (root)
 `bash deploy/vps/bootstrap.sh "<deploy public key>"` installs Docker if missing, creates the `acbuilds` user, opens only UDP 9000-9001 and 9100-9101 in ufw, installs `deploy.sh` and authorizes the deploy key. Then copy the DAT files to `/opt/acbuilds/dats` and run the first deploy.
 
+## Verify, rollback and healthcheck
+
+Every deploy is followed by an automated verification step, and the stack is polled on a schedule independently of deploys.
+
+**Deploy-time verification** (`.github/workflows/build.yml`, `verify` job, runs after `deploy` succeeds):
+1. Polls the authenticated `/api/health` endpoint (see below) up to 10 times, 30s apart (5 min total - matches `deploy.sh`'s own `wait_open` timeout), until `overall_healthy: true`.
+2. **Healthy:** writes the just-deployed version to `deploy/LAST_GOOD.txt` and pushes that single-file change to `main` as a bot commit (`deploy: verified <version> [skip ci]`). `deploy/LAST_GOOD.txt` and `deploy/BLACKLIST.txt` are in `build.yml`'s push `paths-ignore`, so this commit does not retrigger a build.
+3. **Unhealthy/timeout:** reads the previous good version from `deploy/LAST_GOOD.txt` and SSHes to the VPS to run `deploy.sh --rollback <previous version>`, then appends the failed commit's SHA to `deploy/BLACKLIST.txt` and pushes that (same bot-commit treatment), and fails the workflow with a summary explaining what happened.
+
+**Blacklist:** before a normal `deploy.sh <sha>` proceeds, it fetches `deploy/BLACKLIST.txt` from `main`'s HEAD (never from the target sha itself - a bad commit hasn't blacklisted itself yet) and refuses, with no changes made, if that sha is listed. This stops a bad build from being redeployed by a retriggered workflow or a manual `workflow_dispatch`.
+
+**Recovery modes on `deploy.sh`** (see the script's own header comment for exact usage):
+- `deploy.sh --restart` - no image pull, no database change: `docker compose restart ace-server ace-vr-server`, then the existing `wait_open` check. The first, cheapest recovery step.
+- `deploy.sh --rollback <version>` - pins `ACB_TAG=<version>` (any previously published GHCR tag - all versioned tags are retained indefinitely) in `/opt/acbuilds/.env`, pulls, `docker compose up -d --remove-orphans`, then `wait_open`. Compose file, `Config.js`/`config-vr.js` and the database are untouched - this only changes which image tag runs.
+
+**Scheduled healthcheck** (`.github/workflows/healthcheck.yml`, every 30 minutes plus manual dispatch): polls `/api/health` once. If unhealthy, runs `deploy.sh --restart` on the VPS, waits ~60s, and polls again. If still unhealthy, reads `deploy/LAST_GOOD.txt` and runs `deploy.sh --rollback <version>`, then polls once more. Writes a one-line-per-step `$GITHUB_STEP_SUMMARY` for every outcome (healthy / recovered-by-restart / recovered-by-rollback / still-unhealthy). It never writes to `LAST_GOOD.txt` or `BLACKLIST.txt` - a scheduled failure isn't necessarily the currently-deployed version's fault, so only the deploy-time `verify` job updates those.
+
+**`/api/health`** (`status/acb_status.py`, same host/port as `/api/status`, behind the same Caddy Basic Auth): `{ace_server: {running, world_open}, ace_vr_server: {running, world_open}, ace_db: {running, healthy}, cpu_percent, ram_percent, disk_percent, overall_healthy, checked_at}`. `overall_healthy` is true only when both servers are running with their world open AND the database container is running and its Docker healthcheck reports `healthy`; the resource percentages are informational and never gate `overall_healthy`.
+- **Caddy:** this repo does not track the VPS's Caddyfile, so `/api/health` rides on whatever site block already proxies `/api/status` and friends to `127.0.0.1:8618` - no config change needed there. If a future Caddyfile edit ever lists routes explicitly rather than proxying the whole site, `/api/health` needs adding to that list by hand on the VPS.
+- **Secret needed:** the `verify` and `healthcheck` workflows authenticate as `tom` with a new repository secret `STATUS_PASSWORD` - the same password already used for the site's Basic Auth (the vault entry backing `.\vault get site_password` / the status page's own password, whichever the VPS Caddyfile currently uses for `tom`). Add it under Settings > Secrets and variables > Actions.
+
 ## Safety notes
 - **First account = admin.** ACE makes the first account created on an empty database an administrator. Create the owner account BEFORE the ports are opened to the internet.
 - Account auto-creation stays on (that is how players get accounts); anyone on the internet can create an account.
 - **Characters are per server:** a character made on port 9000 exists only on the stock server; make a separate one on 9100. The account (`tom`, admin) works on both.
-- **Rollback:** restore a backup with `gunzip -c backups/<file> | docker exec -i ace-db mariadb -h127.0.0.1 -uace -pace-local`, and pin older images with `ACB_TAG=<release tag>` (see the Releases page).
+- **Rollback:** `deploy.sh --rollback <version>` does the image-tag pin automatically now (see "Verify, rollback and healthcheck" above); to restore the database itself instead, `gunzip -c backups/<file> | docker exec -i ace-db mariadb -h127.0.0.1 -uace -pace-local`.
 - The DNS record for `ace.mossbuilds.xyz` must be **DNS only** (not proxied) so UDP reaches the VPS.
 
 ## Status page (https://ace.mossbuilds.xyz/)
