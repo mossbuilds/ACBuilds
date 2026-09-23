@@ -84,6 +84,8 @@ jobs:
           echo "watched=$(echo "$extra" | xargs)" >> "$GITHUB_OUTPUT"
       - name: Compare with published images
         id: cmp
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           echo "${{ github.token }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
           label() { docker buildx imagetools inspect "$1" --format '{{json .Image.Config.Labels}}' 2>/dev/null | jq -r --arg k "$2" '.[$k] // ""' || true; }
@@ -104,6 +106,27 @@ jobs:
           bs=false; bv=false
           if [ "$force" = true ] || [ "$old" != "$new" ]; then bs=true; fi
           if [ "$force" = true ] || [ "$oldvr" != "$newvr" ]; then bv=true; fi
+          # Thwargle/ACE also carries its Unreal client project under Unreal/. Commits that touch only that folder change
+          # nothing in the server we build, so they neither rebuild nor redeploy the VR server (Tom, 2026-09-23). Applied
+          # only when nothing else moved (stock fingerprint unchanged = same ACE, world data and watched mods) and the fork
+          # simply moved forward; anything unusual (no baseline, diverged history, a capped file list, a file moved into or
+          # out of Unreal/) falls back to rebuilding.
+          if [ "$bv" = true ] && [ "$force" != true ] && [ "$bs" = false ]; then
+            prev_vr=$(label "$IMAGE-vr-server:latest" acbuilds.vr.ace)
+            cur_vr="${{ steps.up.outputs.vr_sha }}"
+            if [ -n "$prev_vr" ] && [ "$prev_vr" != "$cur_vr" ]; then
+              cmpjson=$(gh api "repos/$VR_ACE_REPO/compare/$prev_vr...$cur_vr" 2>/dev/null || echo '{}')
+              st=$(echo "$cmpjson" | jq -r '.status // ""')
+              nf=$(echo "$cmpjson" | jq -r '(.files // []) | length')
+              other=$(echo "$cmpjson" | jq -r '[(.files // [])[] | select(((.filename | startswith("Unreal/")) and ((.previous_filename // .filename) | startswith("Unreal/"))) | not)] | length')
+              if [ "$st" = "ahead" ] && [ "$nf" -gt 0 ] && [ "$nf" -lt 300 ] && [ "$other" = "0" ]; then
+                echo "vr: fork moved ${prev_vr:0:12} -> ${cur_vr:0:12}, but only Unreal/ changed ($nf files) - VR rebuild skipped"
+                bv=false
+              else
+                echo "vr: fork moved ${prev_vr:0:12} -> ${cur_vr:0:12} (status=$st files=$nf outside-Unreal=$other) - rebuilding"
+              fi
+            fi
+          fi
           echo "build_stock=$bs" >> "$GITHUB_OUTPUT"
           echo "build_vr=$bv" >> "$GITHUB_OUTPUT"
           if [ "$bs" = true ] || [ "$bv" = true ]; then echo "build=true" >> "$GITHUB_OUTPUT"; else echo "build=false" >> "$GITHUB_OUTPUT"; fi
