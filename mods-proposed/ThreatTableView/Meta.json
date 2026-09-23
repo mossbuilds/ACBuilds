@@ -1,0 +1,10 @@
+{
+  "Name": "ThreatTableView",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "Read-only Sentinel view of a targeted/last-appraised monster's live combat-threat state: current attack target, targeting tactic, awareness range, and the ranked damager list. Never blocks or changes combat.",
+  "Version": "1.0.0",
+  "Enabled": true,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}
