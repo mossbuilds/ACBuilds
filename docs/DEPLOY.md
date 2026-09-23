@@ -16,8 +16,27 @@ Both servers use **one MariaDB**: `ace_auth` (accounts, so one login works on bo
 ## What happens on an update
 1. GitHub builds and publishes new images (this already happens automatically, including when `ACEmulator/ACE` or `Thwargle/ACE` change).
 2. The workflow's `deploy` job connects to the VPS with a dedicated SSH key whose only permission is to run `deploy.sh` (SSH forced command, `restrict`: no shell, no forwarding). On every deploy `deploy.sh` also runs a root-owned script (the only thing the deploy user may `sudo`) that installs Docker if it is missing and upgrades it when a newer version is available.
-3. `deploy.sh`: fetches the compose file for that commit, **backs up the database first** (verified with `gzip -t` and a size check; if the backup fails nothing is changed), pulls the new images, restarts the two servers, waits until both report "World is now open".
+3. `deploy.sh`: fetches the compose file for that commit, pulls the new images (so players keep playing while the download happens), **warns players in game** with a countdown (see below), **backs up the database** (verified with `gzip -t` and a size check; if the backup fails nothing is changed), then restarts the two servers and waits until both report "World is now open".
 4. The database *image* is **not** swapped automatically (its volume persists, so a new image alone would not change the data). To apply a new world-data image: run `deploy.sh --recreate-db` on the VPS (backs up, replaces the database with the new pre-seeded one, restores accounts and characters).
+
+## In-game warning before a restart
+
+A normal `deploy.sh <sha>` (and `--recreate-db`) now pulls the new images, then warns players before touching any
+container, **after** the pull and **before** the backup: pull -> warn -> backup -> restart. Recovery paths never
+count down - `--restart`, `--rollback <version>`, `--heal` and `--backup` restart or back up immediately.
+
+- `deploy.sh <sha> --warn N` sets the warning to `N` minutes (0-60, default 10; `0` skips the countdown entirely).
+- The `build.yml` `deploy` job sends `"<sha> --warn <W>"`, where `W` is the `workflow_dispatch` input `warn_minutes`
+  (validated 0-60 before it's sent) or `10` on a push/schedule-triggered deploy.
+- `countdown()` in `deploy.sh` counts players first via the local status API (`http://127.0.0.1:8618/api/status`,
+  summed `players_online` across servers); if nobody is online, or `--warn 0`, it logs and skips straight to the
+  backup/restart. If the status call fails it treats the count as unknown and warns anyway (safe default).
+- Broadcasts go out with the ACE console's `gamecast` command over the `/ace/console.in` pipe (see "Server console
+  from the host" below), to whichever of `ace-server`/`ace-vr-server` is actually running: first at `N` minutes,
+  then at 5/2/1 minutes and 30 seconds before the restart (whichever of those are below `N`), then a final "now"
+  message. A failed broadcast never fails the deploy.
+- The deploy job's SSH command uses `-o ServerAliveInterval=30 -o ServerAliveCountMax=10` so the connection survives
+  a long countdown while `deploy.sh` runs on the other end.
 
 ## GitHub settings the deploy job needs
 Repository secrets (Settings > Secrets and variables > Actions): `VPS_HOST`, `VPS_USER` (= `acbuilds`), `VPS_SSH_KEY` (private deploy key), `VPS_KNOWN_HOSTS` (the pinned SSH host key line for the VPS).
