@@ -15,6 +15,10 @@ on:
         description: "Build even if upstream is unchanged"
         type: boolean
         default: false
+      warn_minutes:
+        description: "in-game warning before the servers restart; 0 = deploy immediately"
+        type: string
+        default: "10"
 
 permissions:
   contents: write
@@ -328,13 +332,18 @@ jobs:
           KNOWN: ${{ secrets.VPS_KNOWN_HOSTS }}
           HOST: ${{ secrets.VPS_HOST }}
           USER_: ${{ secrets.VPS_USER }}
+          WARN_IN: ${{ github.event_name == 'workflow_dispatch' && inputs.warn_minutes || '10' }}
         run: |
+          [[ "$WARN_IN" =~ ^[0-9]+$ ]] && [ "$WARN_IN" -ge 0 ] && [ "$WARN_IN" -le 60 ] \
+            || { echo "refusing: warn_minutes must be 0-60, got '$WARN_IN'"; exit 1; }
           echo "## Deploy" >> "$GITHUB_STEP_SUMMARY"
           echo "Deploying version \`${{ needs.check.outputs.version }}\` (commit \`${{ github.sha }}\`) - see the build job summary above for what changed this cycle." >> "$GITHUB_STEP_SUMMARY"
+          echo "In-game warning: $WARN_IN minutes (skipped automatically if nobody is online)" >> "$GITHUB_STEP_SUMMARY"
           install -m 600 /dev/null "$RUNNER_TEMP/key"; printf '%s\n' "$KEY" > "$RUNNER_TEMP/key"
           printf '%s\n' "$KNOWN" > "$RUNNER_TEMP/known_hosts"
           ssh -i "$RUNNER_TEMP/key" -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$RUNNER_TEMP/known_hosts" \
-              "$USER_@$HOST" "${{ github.sha }}"
+              -o ServerAliveInterval=30 -o ServerAliveCountMax=10 \
+              "$USER_@$HOST" "${{ github.sha }} --warn $WARN_IN"
           echo "Deploy command sent; the \`verify\` job checks whether it actually came up healthy." >> "$GITHUB_STEP_SUMMARY"
 
   # Confirms the deploy actually came up healthy (polls the authenticated /api/health endpoint), then either records this

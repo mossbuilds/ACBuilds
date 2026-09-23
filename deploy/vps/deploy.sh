@@ -2,14 +2,16 @@
 # ACBuilds VPS deploy. Runs ON the VPS, as the restricted 'acbuilds' user, and is the ONLY command the GitHub deploy key may run
 # (authorized_keys forced command). Order: back up the database FIRST -> pull new images -> restart servers -> health check.
 #
-#   deploy.sh <git-sha>            called by CI: fetch the compose file for that commit, back up, pull, restart
+#   deploy.sh <git-sha> [--warn N] called by CI: fetch the compose file for that commit, pull, warn players in game N
+#                                  minutes ahead (default 10, 0 = skip), back up, restart
 #   deploy.sh --recreate-db        manual: also replace the database with the new pre-seeded image (world data update),
 #                                  then restore accounts + characters from the fresh backup
 #   deploy.sh --backup             just take a backup
-#   deploy.sh --restart            recovery: no image pull, just restart the two game server containers and re-check
-#                                  that the world opens (first response to a healthcheck failure)
+#   deploy.sh --restart            recovery: no image pull, no countdown, just restart the two game server containers
+#                                  and re-check that the world opens (first response to a healthcheck failure)
 #   deploy.sh --rollback <version> recovery: pin ACB_TAG=<version> (an existing GHCR tag, e.g. v1.78.4816-acb.3), pull and
-#                                  restart on that image only - compose/config files and the database are left alone
+#                                  restart on that image only - compose/config files and the database are left alone;
+#                                  no countdown
 #   deploy.sh --heal               run heal.sh once, immediately (does not take the deploy lock itself - heal.sh takes
 #                                  it, so a normal deploy and a heal pass can never run at the same time either way)
 set -euo pipefail
@@ -27,11 +29,16 @@ exec 9>"$APP/.deploy.lock"; flock -n 9 || { echo "another deploy is running"; ex
 # When invoked through the SSH forced command the argument arrives in SSH_ORIGINAL_COMMAND.
 ARG="${1:-${SSH_ORIGINAL_COMMAND:-}}"
 ROLLBACK_VERSION=""
+WARN=10   # in-game warning minutes before a normal deploy restarts the servers; recovery paths never use this
 case "$ARG" in
-  --recreate-db|--backup|--restart) MODE="$ARG"; SHA="main" ;;
-  --rollback\ *) MODE="--rollback"; ROLLBACK_VERSION="${ARG#--rollback }"; SHA="main"
+  --recreate-db|--backup|--restart) MODE="$ARG"; SHA="main"; WARN=0 ;;
+  --rollback\ *) MODE="--rollback"; ROLLBACK_VERSION="${ARG#--rollback }"; SHA="main"; WARN=0
     [[ "$ROLLBACK_VERSION" =~ ^[A-Za-z0-9._-]+$ ]] || { echo "refusing: --rollback needs a plain image tag"; exit 2; } ;;
   "") MODE=""; SHA="main" ;;
+  *\ --warn\ *)
+    SHA="${ARG%% --warn *}"; WARN="${ARG##* --warn }"; MODE=""
+    [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "refusing unexpected argument"; exit 2; }
+    [[ "$WARN" =~ ^[0-9]+$ ]] && [ "$WARN" -ge 0 ] && [ "$WARN" -le 60 ] || { echo "refusing: --warn needs a whole number of minutes, 0-60"; exit 2; } ;;
   *) [[ "$ARG" =~ ^[0-9a-f]{40}$ ]] || { echo "refusing unexpected argument"; exit 2; }; MODE=""; SHA="$ARG" ;;
 esac
 # Docker: the pipeline installs it if missing and upgrades it when a newer version exists, through the ONE root-owned script this
@@ -91,6 +98,52 @@ ensure_vr_shard() {
     echo "== creating the VR shard schema (structure copied from ace_shard)"
     docker exec ace-db mariadb-dump -uroot --no-data ace_shard | docker exec -i ace-db mariadb -uroot ace_shard_vr
   fi
+}
+
+# Warns players in game before a restart via the ACE console pipe (gamecast, visible to everyone online). Never
+# touches a container's compose state, so it's safe to run before the backup. A failed broadcast never fails the deploy.
+STATUS_URL="http://127.0.0.1:8618/api/status"
+broadcast() {
+  local c="$1" msg="$2"
+  docker inspect -f '{{.State.Running}}' "$c" 2>/dev/null | grep -q true || return 0
+  printf '%s\n' "gamecast $msg" | docker exec -i "$c" sh -c 'cat > /ace/console.in' 2>/dev/null || true
+}
+broadcast_all() {
+  local msg="$1"
+  echo "== broadcast: $msg"
+  broadcast ace-server "$msg" || true
+  broadcast ace-vr-server "$msg" || true
+}
+countdown() {
+  local n="$1"
+  if [ "$n" = "0" ]; then echo "== no countdown (warn=0)"; return 0; fi
+  local players
+  players=$(curl -fsS --max-time 5 "$STATUS_URL" 2>/dev/null | python3 -c '
+import sys, json
+try:
+    d = json.load(sys.stdin)
+    print(sum(s.get("players_online", 0) for s in d.get("servers", [])))
+except Exception:
+    print("UNKNOWN")
+' 2>/dev/null || echo UNKNOWN)
+  if [ "$players" = "0" ]; then echo "== nobody online - no countdown"; return 0; fi
+
+  broadcast_all "Server update in $n minutes. Both servers will restart for about 3 minutes. Please find a safe spot and log out before then."
+  local secs=$((n * 60)) prev=$((n * 60)) mark
+  for mark in 300 120 60 30; do
+    if [ "$mark" -lt "$secs" ]; then
+      sleep $((prev - mark))
+      case "$mark" in
+        300) broadcast_all "Server update in 5 minutes - please get to a safe spot and log out." ;;
+        120) broadcast_all "Server update in 2 minutes - please get to a safe spot and log out." ;;
+        60)  broadcast_all "Server update in 1 minute - please get to a safe spot and log out." ;;
+        30)  broadcast_all "Server restarting in 30 seconds - please log out now." ;;
+      esac
+      prev="$mark"
+    fi
+  done
+  sleep "$prev"
+  broadcast_all "Server restarting now for an update. Back in a few minutes."
 }
 
 wait_open() {
@@ -156,15 +209,24 @@ chmod 755 heal.sh; chmod 644 heal_lib.py 2>/dev/null || true
 ls dats/client_portal.dat dats/client_cell_1.dat dats/client_local_English.dat >/dev/null 2>&1 \
   || { echo "ERROR: AC DAT files missing in $APP/dats (client_portal.dat, client_cell_1.dat, client_local_English.dat)"; exit 1; }
 
-backup
-[ "$MODE" = "--backup" ] && exit 0
+if [ "$MODE" = "--backup" ]; then
+  backup
+  exit 0
+fi
 
 # A normal deploy always goes back to :latest - otherwise a pin left by an earlier --rollback would keep every later
 # deploy on the old images forever.
 set_tag latest
 
+# Pulled BEFORE the countdown, so players keep playing while the (large) images download; the countdown and backup
+# below never touch a container, so nothing changes for players until after both are done.
 echo "== pulling images"
 $DC pull
+
+countdown "$WARN"
+
+backup
+
 if [ "$MODE" = "--recreate-db" ]; then
   [ -n "${LAST_BACKUP:-}" ] || { echo "no backup available, refusing to recreate the database"; exit 1; }
   echo "== replacing the database with the new pre-seeded image, then restoring accounts and characters"
