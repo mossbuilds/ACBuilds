@@ -7,7 +7,7 @@ Runs on the host next to the Docker containers (Python standard library only), s
   python3 acb_status.py [--port 8618] [--data DIR]        DIR holds locations.xml and cod_locations.xml
   python3 acb_status.py --once                            print the JSON once and exit (debug)
 """
-import argparse, datetime, html, json, math, os, re, subprocess, sys, threading, time, urllib.request
+import argparse, datetime, hashlib, html, json, math, os, re, secrets, subprocess, sys, threading, time, urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -32,6 +32,10 @@ IDEAS_MD_URL = os.environ.get("ACB_IDEAS_MD_URL", "https://raw.githubusercontent
 HOPPER_LIST_URL = os.environ.get("ACB_HOPPER_LIST_URL", "https://loam.mossbuilds.xyz/hopper/list.json")
 HOPPER_TOKEN_FILE = Path(os.environ.get("ACB_HOPPER_TOKEN_FILE", "/opt/acbuilds/.hopper_token"))
 MODS_CACHE_TTL = int(os.environ.get("ACB_MODS_CACHE_TTL", "300"))
+COMMUNITY_FILE = Path(os.environ.get("ACB_COMMUNITY_FILE", "/opt/acbuilds/status/data/community.json"))
+COMMUNITY_MAX_IDEAS = 500
+IDEA_RATE_LIMIT = (5, 3600)    # max 5 ideas per hour per voter
+VOTE_RATE_LIMIT = (60, 3600)   # max 60 votes per hour per voter
 
 
 def mod_servers():
@@ -548,6 +552,135 @@ def fetch_hopper_ideas():
     return out
 
 
+CTRL_CHARS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+WHITESPACE = re.compile(r"\s+")
+
+
+def clean_text(s, max_len):
+    s = CTRL_CHARS.sub("", str(s or ""))
+    s = WHITESPACE.sub(" ", s).strip()
+    return s[:max_len]
+
+
+class CommunityStore:
+    """Player-submitted mod ideas and votes - a public, unauthenticated feature. Nothing here is scheduled to be
+    built; it is a suggestion box only. Never forwarded to the hopper. One JSON file, atomic writes, one lock."""
+
+    def __init__(self, path):
+        self.path = Path(path)
+        self.lock = threading.Lock()
+        self._idea_hits = {}   # voter_hash -> [timestamps] (idea submissions)
+        self._vote_hits = {}   # voter_hash -> [timestamps] (votes)
+
+    def _load(self):
+        try:
+            d = json.loads(self.path.read_text(encoding="utf-8"))
+        except Exception:
+            d = {}
+        d.setdefault("ideas", [])
+        d.setdefault("votes", {})
+        if not d.get("salt"):
+            d["salt"] = secrets.token_hex(16)
+        return d
+
+    def _save(self, d):
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = self.path.with_name(f"{self.path.name}.{os.getpid()}.tmp")
+        tmp.write_text(json.dumps(d), encoding="utf-8")
+        os.replace(tmp, self.path)
+
+    def voter_hash(self, ip):
+        d = self._load()
+        return hashlib.sha256((d["salt"] + ip).encode("utf-8")).hexdigest()[:16]
+
+    @staticmethod
+    def _rate_ok(hits, voter, limit):
+        n, window = limit
+        now = time.time()
+        lst = [t for t in hits.get(voter, ()) if now - t < window]
+        hits[voter] = lst
+        if len(lst) >= n:
+            return False
+        lst.append(now)
+        return True
+
+    def ideas(self, include_hidden=False):
+        with self.lock:
+            d = self._load()
+            votes = d["votes"]
+            out = []
+            for i in d["ideas"]:
+                if i.get("hidden") and not include_hidden:
+                    continue
+                j = dict(i)
+                j["votes"] = len(votes.get(f"community:{i['id']}", []))
+                out.append(j)
+            return out
+
+    def add_idea(self, title, desc, voter):
+        with self.lock:
+            if not self._rate_ok(self._idea_hits, voter, IDEA_RATE_LIMIT):
+                return False, "Too many ideas submitted - try again later.", 429
+            title = clean_text(title, 80)
+            desc = clean_text(desc, 500)
+            if len(title) < 3:
+                return False, "Title needs to be at least 3 characters.", 400
+            d = self._load()
+            if len(d["ideas"]) >= COMMUNITY_MAX_IDEAS:
+                return False, "The idea box is full for now - thanks for the enthusiasm.", 400
+            tk = name_key(title)
+            for i in d["ideas"]:
+                if name_key(i["title"]) == tk:
+                    return False, "That idea (or one very like it) is already on the list.", 400
+            new_id = (max((i["id"] for i in d["ideas"]), default=0)) + 1
+            d["ideas"].append({"id": new_id, "title": title, "desc": desc,
+                                "added_at": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                                "hidden": False})
+            self._save(d)
+            return True, new_id, 200
+
+    def vote(self, key, voter, valid_keys):
+        with self.lock:
+            if key not in valid_keys:
+                return False, "That idea isn't on the page.", 400, 0
+            if not self._rate_ok(self._vote_hits, voter, VOTE_RATE_LIMIT):
+                d = self._load()
+                return False, "Too many votes - try again later.", 429, len(d["votes"].get(key, []))
+            d = self._load()
+            lst = d["votes"].setdefault(key, [])
+            if voter not in lst:
+                lst.append(voter)
+                self._save(d)
+            return True, None, 200, len(lst)
+
+    def set_hidden(self, idea_id, hidden):
+        with self.lock:
+            d = self._load()
+            for i in d["ideas"]:
+                if i["id"] == idea_id:
+                    i["hidden"] = hidden
+                    self._save(d)
+                    return True
+            return False
+
+    def full_dump(self):
+        with self.lock:
+            d = self._load()
+            return {"ideas": d["ideas"], "votes": {k: len(v) for k, v in d["votes"].items()}}
+
+
+COMMUNITY = CommunityStore(COMMUNITY_FILE)
+
+
+def client_ip(handler):
+    xff = handler.headers.get("X-Forwarded-For")
+    if xff:
+        parts = [p.strip() for p in xff.split(",") if p.strip()]
+        if parts:
+            return parts[-1]
+    return handler.client_address[0]
+
+
 def mods_data():
     """Everything /mods and /api/mods need, computed live with a 5-minute cache on the remote fetches only."""
     servers = []
@@ -580,6 +713,27 @@ def mods_data():
     hopper_error = None if hp_state == "ok" else hp_val
     hopper_rows = hp_val if (hp_state == "ok" and hp_val) else []
 
+    for i in ideas_not_built:
+        i["key"] = f"idea:{name_key(i['name'])}"
+    for i in hopper_rows:
+        i["key"] = f"hopper:{i['id']}"
+    community_rows = COMMUNITY.ideas()
+    for i in community_rows:
+        i["key"] = f"community:{i['id']}"
+
+    with COMMUNITY.lock:
+        votes = COMMUNITY._load()["votes"]
+    for i in ideas_not_built:
+        i["votes"] = len(votes.get(i["key"], []))
+    for i in hopper_rows:
+        i["votes"] = len(votes.get(i["key"], []))
+    ideas_not_built.sort(key=lambda i: -i["votes"])
+    hopper_rows.sort(key=lambda i: -i["votes"])
+    community_rows.sort(key=lambda i: -i["votes"])
+
+    valid_keys = {i["key"] for i in ideas_not_built} | {i["key"] for i in hopper_rows} | \
+                 {i["key"] for i in community_rows}
+
     return {
         "generated": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "servers": servers,
@@ -591,6 +745,8 @@ def mods_data():
         "ideas_error": idea_error,
         "hopper_ideas": hopper_rows,
         "hopper_error": hopper_error,
+        "community_ideas": community_rows,
+        "valid_vote_keys": sorted(valid_keys),
     }
 
 
@@ -609,6 +765,37 @@ def _mod_rows_html(items, empty_note, cols):
         out.append(f'<tr data-s="{search}">{cells}</tr>')
     out.append("</tbody></table></div>")
     return "".join(out)
+
+
+def _vote_rows_html(items, empty_note, cols):
+    """Like _mod_rows_html but prepends a vote button + count column keyed off item['key']/item['votes']."""
+    if not items:
+        return f'<div class="muted">{_esc(empty_note)}</div>'
+    out = ['<div class="tablewrap"><table><tbody>']
+    for it in items:
+        cells = "".join(("<td class='%s'>" % c if c else "<td>") + _esc(it.get(k, "")) + "</td>" for k, c in cols)
+        search = _esc(" ".join(str(it.get(k, "")) for k, _ in cols).lower())
+        key = _esc(it["key"])
+        votes = int(it.get("votes", 0))
+        vote_cell = (f'<td class="votecell" data-key="{key}">'
+                     f'<button class="vbtn" type="button" data-key="{key}" onclick="acbVote(this)">&#9650;</button> '
+                     f'<span class="vcount">{votes}</span></td>')
+        out.append(f'<tr data-s="{search}">{vote_cell}{cells}</tr>')
+    out.append("</tbody></table></div>")
+    return "".join(out)
+
+
+def _community_form_html():
+    return '''
+    <form id="ideaform" class="ideaform" onsubmit="return acbSubmitIdea(event)">
+      <p class="note">Suggestions from players. They are ideas only - nothing here is scheduled to be built;
+      Tom picks what gets made.</p>
+      <input type="text" name="title" id="idea_title" placeholder="Idea title" maxlength="80" required>
+      <textarea name="desc" id="idea_desc" placeholder="A sentence or two (optional)" maxlength="500" rows="2"></textarea>
+      <input type="text" name="website" id="idea_website" class="hp" tabindex="-1" autocomplete="off">
+      <button type="submit">Add idea</button>
+      <span id="idea_msg" class="muted"></span>
+    </form>'''
 
 
 def render_mods_html(d):
@@ -632,19 +819,21 @@ def render_mods_html(d):
                                      [("name", None), ("status", None), ("summary", "wide")]))
     ideas_html = (f'<div class="muted">couldn\'t load right now ({_esc(d["ideas_error"])})</div>'
                   if d["ideas_error"] else
-                  _mod_rows_html(d["ideas_not_built"], "no un-built ideas",
-                                 [("num", None), ("name", None), ("feas", None), ("desc", "wide")]))
+                  _vote_rows_html(d["ideas_not_built"], "no un-built ideas",
+                                  [("num", None), ("name", None), ("feas", None), ("desc", "wide")]))
     hopper_html = (f'<div class="muted">couldn\'t load right now ({_esc(d["hopper_error"])})</div>'
                    if d["hopper_error"] else
-                   _mod_rows_html(d["hopper_ideas"], "nothing from the hopper right now",
-                                  [("id", None), ("status", None), ("text", "wide")]))
+                   _vote_rows_html(d["hopper_ideas"], "nothing from the hopper right now",
+                                   [("id", None), ("status", None), ("text", "wide")]))
+    community_html = _vote_rows_html(d["community_ideas"], "no player ideas yet - be the first",
+                                      [("title", None), ("desc", "wide")])
 
     enabled_count = sum(len(s["enabled"]) for s in d["servers"])
     disabled_count = sum(len(s["disabled"]) for s in d["servers"])
     built_count = len(d["built_not_deployed"]) if not d["built_not_deployed_error"] else 0
     progress_count = len(d["in_progress"]) if not d["in_progress_error"] else 0
     ideas_count = (len(d["ideas_not_built"]) if not d["ideas_error"] else 0) + \
-                  (len(d["hopper_ideas"]) if not d["hopper_error"] else 0)
+                  (len(d["hopper_ideas"]) if not d["hopper_error"] else 0) + len(d["community_ideas"])
 
     return f'''<!doctype html>
 <html lang="en">
@@ -685,6 +874,18 @@ def render_mods_html(d):
   input[type=search] {{ background: var(--bg); color: var(--ink); border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; font: inherit; width: 100%; margin-bottom: 16px; }}
   footer {{ margin-top: 18px; color: var(--muted); font-size: 12px; }}
   tr.hide {{ display: none; }}
+  td.votecell {{ white-space: nowrap; width: 1%; }}
+  .vbtn {{ background: var(--bg); color: var(--accent); border: 1px solid var(--line); border-radius: 6px;
+           padding: 2px 8px; font: inherit; cursor: pointer; }}
+  .vbtn:disabled {{ opacity: .5; cursor: default; }}
+  .vcount {{ display: inline-block; min-width: 1.4em; text-align: right; }}
+  .ideaform {{ display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-start; margin-bottom: 12px; }}
+  .ideaform input[type=text], .ideaform textarea {{ background: var(--bg); color: var(--ink); border: 1px solid var(--line);
+           border-radius: 8px; padding: 7px 10px; font: inherit; }}
+  .ideaform input#idea_title {{ flex: 1 1 220px; }}
+  .ideaform textarea {{ flex: 2 1 320px; resize: vertical; }}
+  .ideaform button {{ background: var(--accent); color: #fff; border: none; border-radius: 8px; padding: 8px 14px; font: inherit; cursor: pointer; }}
+  .ideaform .hp {{ position: absolute; left: -9999px; width: 1px; height: 1px; opacity: 0; }}
 </style>
 </head>
 <body>
@@ -714,6 +915,12 @@ def render_mods_html(d):
   </div>
 
   <div class="card">
+    <h2>Community ideas <span class="n">({len(d["community_ideas"])})</span></h2>
+    {_community_form_html()}
+    {community_html}
+  </div>
+
+  <div class="card">
     <h2>Ideas, not built yet <span class="n">({ideas_count})</span></h2>
     <p class="note">Researched ideas with no code started, plus open hopper items tagged for ACBuilds.</p>
     {ideas_html}
@@ -732,6 +939,56 @@ def render_mods_html(d):
       tr.classList.toggle('hide', v && tr.getAttribute('data-s').indexOf(v) === -1);
     }});
   }});
+
+  function acbVoted() {{
+    try {{ return JSON.parse(localStorage.getItem('acb_voted') || '{{}}'); }} catch (e) {{ return {{}}; }}
+  }}
+  function acbMarkVoted(key) {{
+    try {{ var v = acbVoted(); v[key] = true; localStorage.setItem('acb_voted', JSON.stringify(v)); }} catch (e) {{}}
+  }}
+  (function () {{
+    var voted = acbVoted();
+    document.querySelectorAll('.vbtn').forEach(function (b) {{
+      if (voted[b.getAttribute('data-key')]) {{ b.disabled = true; }}
+    }});
+  }})();
+
+  function acbVote(btn) {{
+    var key = btn.getAttribute('data-key');
+    btn.disabled = true;
+    fetch('/api/mods/vote', {{
+      method: 'POST', headers: {{'Content-Type': 'application/json'}}, body: JSON.stringify({{key: key}})
+    }}).then(function (r) {{ return r.json(); }}).then(function (j) {{
+      if (j.ok) {{
+        acbMarkVoted(key);
+        var cell = btn.closest('.votecell');
+        if (cell) {{ var c = cell.querySelector('.vcount'); if (c) {{ c.textContent = j.votes; }} }}
+      }} else {{
+        btn.disabled = false;
+      }}
+    }}).catch(function () {{ btn.disabled = false; }});
+  }}
+
+  function acbSubmitIdea(ev) {{
+    ev.preventDefault();
+    var msg = document.getElementById('idea_msg');
+    var title = document.getElementById('idea_title').value;
+    var desc = document.getElementById('idea_desc').value;
+    var website = document.getElementById('idea_website').value;
+    msg.textContent = 'Adding...';
+    fetch('/api/mods/idea', {{
+      method: 'POST', headers: {{'Content-Type': 'application/json'}},
+      body: JSON.stringify({{title: title, desc: desc, website: website}})
+    }}).then(function (r) {{ return r.json(); }}).then(function (j) {{
+      if (j.ok) {{
+        msg.textContent = 'Added - thanks!';
+        setTimeout(function () {{ location.reload(); }}, 700);
+      }} else {{
+        msg.textContent = j.error || 'Could not add that idea.';
+      }}
+    }}).catch(function () {{ msg.textContent = 'Could not reach the server.'; }});
+    return false;
+  }}
 </script>
 </body>
 </html>'''
@@ -794,8 +1051,94 @@ def make_handler(state, index_path):
                     self._send(200, json.dumps({"overall_healthy": False, "error": str(e),
                                                   "checked_at": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}),
                                "application/json")
+            elif path == "/api/admin/community":
+                try:
+                    self._send(200, json.dumps(COMMUNITY.full_dump()), "application/json")
+                except Exception as e:
+                    self._send(200, json.dumps({"error": str(e)}), "application/json")
             else:
                 self._send(404, "not found", "text/plain")
+
+        def _read_json_body(self, max_bytes=4096):
+            """Returns (obj, error_message). error_message is None on success."""
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+            except ValueError:
+                return None, "bad request"
+            if length <= 0:
+                return None, "empty body"
+            if length > max_bytes:
+                return None, "request too large"
+            raw = self.rfile.read(length)
+            try:
+                return json.loads(raw.decode("utf-8")), None
+            except Exception:
+                return None, "bad json"
+
+        def _json(self, code, obj):
+            self._send(code, json.dumps(obj), "application/json")
+
+        def do_POST(self):
+            path = self.path.split("?")[0]
+            if path == "/api/mods/vote":
+                obj, err = self._read_json_body()
+                if err:
+                    self._json(400, {"ok": False, "error": err})
+                    return
+                key = str((obj or {}).get("key", ""))[:200]
+                ip = client_ip(self)
+                voter = COMMUNITY.voter_hash(ip)
+                try:
+                    d = mods_data()
+                except Exception as e:
+                    self._json(500, {"ok": False, "error": str(e)})
+                    return
+                ok, msg, code, votes = COMMUNITY.vote(key, voter, set(d["valid_vote_keys"]))
+                if ok:
+                    self._json(200, {"ok": True, "votes": votes})
+                else:
+                    self._json(code, {"ok": False, "error": msg, "votes": votes})
+            elif path == "/api/mods/idea":
+                obj, err = self._read_json_body()
+                if err:
+                    self._json(400, {"ok": False, "error": err})
+                    return
+                obj = obj or {}
+                if str(obj.get("website", "")).strip():
+                    # honeypot tripped: pretend success, store nothing
+                    self._json(200, {"ok": True, "id": None})
+                    return
+                title = obj.get("title", "")
+                desc = obj.get("desc", "")
+                if len(clean_text(title, 200)) < 3 or len(clean_text(title, 200)) > 80 or len(str(desc)) > 2000:
+                    self._json(400, {"ok": False, "error": "Title needs to be 3-80 characters."})
+                    return
+                ip = client_ip(self)
+                voter = COMMUNITY.voter_hash(ip)
+                ok, res, code = COMMUNITY.add_idea(title, desc, voter)
+                if ok:
+                    self._json(200, {"ok": True, "id": res})
+                else:
+                    self._json(code, {"ok": False, "error": res})
+            elif path == "/api/admin/community/hide":
+                self._admin_set_hidden(True)
+            elif path == "/api/admin/community/unhide":
+                self._admin_set_hidden(False)
+            else:
+                self._send(404, "not found", "text/plain")
+
+        def _admin_set_hidden(self, hidden):
+            obj, err = self._read_json_body()
+            if err:
+                self._json(400, {"ok": False, "error": err})
+                return
+            try:
+                idea_id = int((obj or {}).get("id"))
+            except (TypeError, ValueError):
+                self._json(400, {"ok": False, "error": "bad id"})
+                return
+            ok = COMMUNITY.set_hidden(idea_id, hidden)
+            self._json(200 if ok else 404, {"ok": ok})
 
     return H
 
