@@ -1,0 +1,90 @@
+name: healthcheck
+
+# Runs independently of build-and-publish: catches the VPS going unhealthy for reasons that have nothing to do with a new
+# image (host resource exhaustion, a crashed container, a stuck world). Never touches deploy/LAST_GOOD.txt or
+# deploy/BLACKLIST.txt - those describe whether a given BUILD verified, and a scheduled-healthcheck failure isn't
+# necessarily the currently-deployed version's fault (could be transient or host-level).
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vps-deploy
+  cancel-in-progress: false
+
+jobs:
+  healthcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Poll /api/health, restart-then-rollback if unhealthy
+        env:
+          STATUS_PASS: ${{ secrets.STATUS_PASSWORD }}
+          KEY: ${{ secrets.VPS_SSH_KEY }}
+          KNOWN: ${{ secrets.VPS_KNOWN_HOSTS }}
+          HOST: ${{ secrets.VPS_HOST }}
+          USER_: ${{ secrets.VPS_USER }}
+        run: |
+          check() { curl -fsS -u "tom:$STATUS_PASS" "https://ace.mossbuilds.xyz/api/health" 2>/dev/null || echo ""; }
+          remote() {
+            install -m 600 /dev/null "$RUNNER_TEMP/key"; printf '%s\n' "$KEY" > "$RUNNER_TEMP/key"
+            printf '%s\n' "$KNOWN" > "$RUNNER_TEMP/known_hosts"
+            ssh -i "$RUNNER_TEMP/key" -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$RUNNER_TEMP/known_hosts" \
+                "$USER_@$HOST" "$1"
+          }
+          healthy() { echo "$1" | jq -r '.overall_healthy // false' 2>/dev/null || echo false; }
+
+          body1=$(check)
+          h1=$(healthy "$body1")
+          echo "first poll: overall_healthy=$h1"
+          if [ "$h1" = "true" ]; then
+            echo "## Healthcheck: healthy" >> "$GITHUB_STEP_SUMMARY"
+            echo "No action taken." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          echo "unhealthy - restarting the two game server containers (first response, no image pull, no DB change)"
+          remote "--restart" || echo "note: --restart command returned non-zero (server may still be settling)"
+          sleep 60
+          body2=$(check)
+          h2=$(healthy "$body2")
+          echo "post-restart poll: overall_healthy=$h2"
+          if [ "$h2" = "true" ]; then
+            {
+              echo "## Healthcheck: recovered by restart"
+              echo "First poll was unhealthy (\`$body1\`); \`deploy.sh --restart\` brought it back."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          prev=$(grep -vE '^\s*#|^\s*$' deploy/LAST_GOOD.txt | head -n1 || true)
+          if [ -z "$prev" ]; then
+            {
+              echo "## Healthcheck: still unhealthy after restart - NO ROLLBACK ATTEMPTED"
+              echo "deploy/LAST_GOOD.txt has no recorded version yet, so an automatic rollback has nothing to target."
+              echo "Last /api/health: \`$body2\`"
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          echo "still unhealthy - rolling back to last known-good version $prev"
+          remote "--rollback $prev" || true
+          body3=$(check)
+          h3=$(healthy "$body3")
+          if [ "$h3" = "true" ]; then
+            {
+              echo "## Healthcheck: recovered by rollback"
+              echo "Restart alone did not clear it; rolled back to \`$prev\`, which came back healthy."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          else
+            {
+              echo "## Healthcheck: STILL UNHEALTHY after rollback"
+              echo "Restarted, then rolled back to \`$prev\` - still not healthy. Needs a human."
+              echo "Last /api/health: \`$body3\`"
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi

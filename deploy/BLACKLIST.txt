@@ -1,0 +1,4 @@
+# Git SHAs (40 hex chars) of builds that failed post-deploy verification and must never be redeployed.
+# One SHA per line. Appended automatically by the build.yml "verify" job when a deploy fails health checks
+# (and a rollback to deploy/LAST_GOOD.txt is performed). deploy.sh checks this file (fetched fresh from the
+# main branch HEAD, never from the target sha itself) before deploying a given commit and refuses if it is listed.

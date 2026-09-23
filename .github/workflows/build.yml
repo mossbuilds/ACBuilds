@@ -6,7 +6,7 @@ on:
   push:
     branches: [main]
     # content, docs and Markdown changes do not change any image or the VPS, so they do not rebuild or redeploy
-    paths-ignore: ["custom-content/**", "docs/**", "**/*.md"]
+    paths-ignore: ["custom-content/**", "docs/**", "**/*.md", "deploy/LAST_GOOD.txt", "deploy/BLACKLIST.txt"]
   schedule:
     - cron: "*/30 * * * *"
   workflow_dispatch:
@@ -49,6 +49,11 @@ jobs:
       world_tag: ${{ steps.up.outputs.world_tag }}
       fingerprint: ${{ steps.up.outputs.fingerprint }}
       vr_fingerprint: ${{ steps.up.outputs.vr_fingerprint }}
+      watched: ${{ steps.up.outputs.watched }}
+      old_ace_sha: ${{ steps.cmp.outputs.old_ace_sha }}
+      old_vr_sha: ${{ steps.cmp.outputs.old_vr_sha }}
+      old_world_tag: ${{ steps.cmp.outputs.old_world_tag }}
+      old_watched: ${{ steps.cmp.outputs.old_watched }}
     steps:
       - name: Resolve upstream state
         id: up
@@ -72,6 +77,7 @@ jobs:
           echo "world_tag=$world" >> "$GITHUB_OUTPUT"
           echo "fingerprint=$(echo "$ace $world $extra" | sha256sum | cut -c1-16)" >> "$GITHUB_OUTPUT"
           echo "vr_fingerprint=$(echo "$vr $world $extra" | sha256sum | cut -c1-16)" >> "$GITHUB_OUTPUT"
+          echo "watched=$(echo "$extra" | xargs)" >> "$GITHUB_OUTPUT"
       - name: Compare with published images
         id: cmp
         run: |
@@ -82,6 +88,13 @@ jobs:
           new="${{ steps.up.outputs.fingerprint }}"
           newvr="${{ steps.up.outputs.vr_fingerprint }}"
           echo "stock: published=$old upstream=$new | vr: published=$oldvr upstream=$newvr"
+          # Previous per-component values (so a later run can print a human diff, not just "the fingerprint changed").
+          # These are only as good as what got stored on the currently-published :latest image, so a fresh repo/registry
+          # prints them empty the first time - the changelog step below treats an empty "old" value as "unknown baseline".
+          echo "old_ace_sha=$(label "$IMAGE-server:latest" acbuilds.ace_sha)" >> "$GITHUB_OUTPUT"
+          echo "old_vr_sha=$(label "$IMAGE-vr-server:latest" acbuilds.vr.ace)" >> "$GITHUB_OUTPUT"
+          echo "old_world_tag=$(label "$IMAGE-server:latest" acbuilds.world_tag)" >> "$GITHUB_OUTPUT"
+          echo "old_watched=$(label "$IMAGE-server:latest" acbuilds.watched)" >> "$GITHUB_OUTPUT"
           force=false
           if [ "${{ github.event_name }}" = "push" ] || [ "${{ inputs.force }}" = "true" ]; then force=true; fi
           bs=false; bv=false
@@ -97,6 +110,59 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0    # full history: the changelog step below diffs commits since the previous push
+      - name: Changelog - what triggered this build
+        id: changelog
+        env:
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+          DEPLOY_ON: ${{ secrets.VPS_DEPLOY || vars.VPS_DEPLOY }}
+        run: |
+          {
+            echo "## What changed this cycle"
+            if [ "$EVENT" = "push" ]; then
+              echo "Triggered by a **push to main** (local commit(s) - code, mods, or custom content)."
+              if [ -n "$BEFORE" ] && [ "$BEFORE" != "0000000000000000000000000000000000000000" ] && git cat-file -e "$BEFORE" 2>/dev/null; then
+                echo
+                echo "Commits since the previous push:"
+                echo '```'
+                git log "$BEFORE..${{ github.sha }}" --oneline
+                echo '```'
+              else
+                echo "(previous commit not available to diff against - first push seen by this workflow, or history was rewritten)"
+              fi
+            elif [ "$EVENT" = "workflow_dispatch" ]; then
+              echo "Triggered **manually** (workflow_dispatch, force=${{ inputs.force }})."
+            else
+              echo "Triggered by the **scheduled upstream poll** (cron) - no new commits to this repo; something upstream moved:"
+            fi
+            if [ "$EVENT" != "push" ]; then
+              echo
+              old_ace="${{ needs.check.outputs.old_ace_sha }}"; new_ace="${{ needs.check.outputs.ace_sha }}"
+              old_vr="${{ needs.check.outputs.old_vr_sha }}"; new_vr="${{ needs.check.outputs.vr_sha }}"
+              old_world="${{ needs.check.outputs.old_world_tag }}"; new_world="${{ needs.check.outputs.world_tag }}"
+              old_watched="${{ needs.check.outputs.old_watched }}"; new_watched="${{ needs.check.outputs.watched }}"
+              any=false
+              if [ -z "$old_ace" ]; then echo "- (no previous ACE sha recorded on the published image yet - baseline unknown)"; any=true
+              elif [ "$old_ace" != "$new_ace" ]; then echo "- upstream ACE master advanced from \`$old_ace\` to \`$new_ace\`"; any=true; fi
+              if [ -z "$old_vr" ]; then echo "- (no previous VR-fork sha recorded on the published image yet - baseline unknown)"; any=true
+              elif [ "$old_vr" != "$new_vr" ]; then echo "- VR fork (Thwargle/ACE) advanced from \`$old_vr\` to \`$new_vr\`"; any=true; fi
+              if [ -n "$old_world" ] && [ "$old_world" != "$new_world" ]; then echo "- world-data release bumped from \`$old_world\` to \`$new_world\`"; any=true; fi
+              if [ -n "$old_watched" ] && [ "$old_watched" != "$new_watched" ]; then
+                echo "- a watched mod repo changed:"; echo "  - was: \`$old_watched\`"; echo "  - now: \`$new_watched\`"; any=true
+              fi
+              [ "$any" = true ] || echo "- no upstream fingerprint input changed (this run was forced)"
+            fi
+            echo
+            if [ "$DEPLOY_ON" = "true" ]; then
+              echo "**Deploying to production** after this build (VPS_DEPLOY is on)."
+            else
+              echo "Build only - \`VPS_DEPLOY\` is off, no deploy triggered."
+            fi
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+        # DEPLOY_ON mirrors the same secret-or-variable read the deploy job uses (secrets can't be read directly in most
+        # contexts here either, so it is copied into env the same way).
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
         with:
@@ -116,6 +182,9 @@ jobs:
           labels: |
             org.opencontainers.image.version=${{ needs.check.outputs.version }}
             acbuilds.fingerprint=${{ needs.check.outputs.fingerprint }}
+            acbuilds.ace_sha=${{ needs.check.outputs.ace_sha }}
+            acbuilds.world_tag=${{ needs.check.outputs.world_tag }}
+            acbuilds.watched=${{ needs.check.outputs.watched }}
           tags: |
             ${{ env.IMAGE }}-server:latest
             ${{ env.IMAGE }}-server:${{ needs.check.outputs.version }}
@@ -154,6 +223,8 @@ jobs:
             org.opencontainers.image.version=${{ needs.check.outputs.version }}
             acbuilds.vr.ace=${{ needs.check.outputs.vr_sha }}
             acbuilds.vr.fingerprint=${{ needs.check.outputs.vr_fingerprint }}
+            acbuilds.world_tag=${{ needs.check.outputs.world_tag }}
+            acbuilds.watched=${{ needs.check.outputs.watched }}
           tags: |
             ${{ env.IMAGE }}-vr-server:latest
             ${{ env.IMAGE }}-vr-server:${{ needs.check.outputs.version }}
@@ -247,7 +318,8 @@ jobs:
     steps:
       - name: Skipped (VPS_DEPLOY is not 'true')
         if: env.DEPLOY_ON != 'true'
-        run: echo "VPS auto-deploy is off. Set VPS_DEPLOY=true (secret or variable) to enable it."
+        run: |
+          echo "VPS auto-deploy is off. Set VPS_DEPLOY=true (secret or variable) to enable it." | tee -a "$GITHUB_STEP_SUMMARY"
       - name: Deploy over SSH (pinned host key)
         if: env.DEPLOY_ON == 'true'
         shell: bash
@@ -257,7 +329,91 @@ jobs:
           HOST: ${{ secrets.VPS_HOST }}
           USER_: ${{ secrets.VPS_USER }}
         run: |
+          echo "## Deploy" >> "$GITHUB_STEP_SUMMARY"
+          echo "Deploying version \`${{ needs.check.outputs.version }}\` (commit \`${{ github.sha }}\`) - see the build job summary above for what changed this cycle." >> "$GITHUB_STEP_SUMMARY"
           install -m 600 /dev/null "$RUNNER_TEMP/key"; printf '%s\n' "$KEY" > "$RUNNER_TEMP/key"
           printf '%s\n' "$KNOWN" > "$RUNNER_TEMP/known_hosts"
           ssh -i "$RUNNER_TEMP/key" -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$RUNNER_TEMP/known_hosts" \
               "$USER_@$HOST" "${{ github.sha }}"
+          echo "Deploy command sent; the \`verify\` job checks whether it actually came up healthy." >> "$GITHUB_STEP_SUMMARY"
+
+  # Confirms the deploy actually came up healthy (polls the authenticated /api/health endpoint), then either records this
+  # version as the new rollback target or rolls back to the last known-good one and blacklists this commit.
+  verify:
+    needs: [check, build, deploy]
+    if: needs.check.outputs.build == 'true' && needs.deploy.result == 'success'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: vps-deploy
+      cancel-in-progress: false
+    env:
+      DEPLOY_ON: ${{ secrets.VPS_DEPLOY || vars.VPS_DEPLOY }}
+    steps:
+      - name: Skipped (no deploy happened)
+        if: env.DEPLOY_ON != 'true'
+        run: echo "VPS_DEPLOY is off - nothing was deployed, so there is nothing to verify." | tee -a "$GITHUB_STEP_SUMMARY"
+      - uses: actions/checkout@v4
+        if: env.DEPLOY_ON == 'true'
+      - name: Poll /api/health until healthy or timeout
+        id: poll
+        if: env.DEPLOY_ON == 'true'
+        env:
+          STATUS_PASS: ${{ secrets.STATUS_PASSWORD }}
+        run: |
+          ok=false
+          for i in $(seq 1 10); do
+            body=$(curl -fsS -u "tom:$STATUS_PASS" "https://ace.mossbuilds.xyz/api/health" || echo "")
+            healthy=$(echo "$body" | jq -r '.overall_healthy // false' 2>/dev/null || echo false)
+            echo "attempt $i/10: overall_healthy=$healthy"
+            if [ "$healthy" = "true" ]; then ok=true; break; fi
+            sleep 30
+          done
+          echo "healthy=$ok" >> "$GITHUB_OUTPUT"
+          echo "last_body=$body" >> "$GITHUB_OUTPUT"
+      - name: Record this version as last-known-good
+        if: env.DEPLOY_ON == 'true' && steps.poll.outputs.healthy == 'true'
+        run: |
+          {
+            echo "## Verify"
+            echo "Deploy of \`${{ needs.check.outputs.version }}\` verified healthy - see the build job summary above for what changed this cycle."
+          } >> "$GITHUB_STEP_SUMMARY"
+          git config user.name "acbuilds-bot"
+          git config user.email "acbuilds-bot@users.noreply.github.com"
+          echo "${{ needs.check.outputs.version }}" > deploy/LAST_GOOD.txt
+          git add deploy/LAST_GOOD.txt
+          if ! git diff --cached --quiet; then
+            git commit -m "deploy: verified ${{ needs.check.outputs.version }} [skip ci]"
+            git push origin HEAD:main
+          fi
+      - name: Roll back and blacklist on failure/timeout
+        if: env.DEPLOY_ON == 'true' && steps.poll.outputs.healthy != 'true'
+        env:
+          KEY: ${{ secrets.VPS_SSH_KEY }}
+          KNOWN: ${{ secrets.VPS_KNOWN_HOSTS }}
+          HOST: ${{ secrets.VPS_HOST }}
+          USER_: ${{ secrets.VPS_USER }}
+        run: |
+          prev=$(grep -vE '^\s*#|^\s*$' deploy/LAST_GOOD.txt | head -n1 || true)
+          {
+            echo "## Verify - FAILED"
+            echo "Deploy of \`${{ needs.check.outputs.version }}\` (commit \`${{ github.sha }}\`) did NOT come up healthy within 5 minutes."
+            echo "Last /api/health response: \`${{ steps.poll.outputs.last_body }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ -z "$prev" ]; then
+            echo "No previous known-good version recorded in deploy/LAST_GOOD.txt - cannot roll back automatically. Manual intervention needed." | tee -a "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Rolling back to last known-good version \`$prev\`." | tee -a "$GITHUB_STEP_SUMMARY"
+            install -m 600 /dev/null "$RUNNER_TEMP/key"; printf '%s\n' "$KEY" > "$RUNNER_TEMP/key"
+            printf '%s\n' "$KNOWN" > "$RUNNER_TEMP/known_hosts"
+            ssh -i "$RUNNER_TEMP/key" -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$RUNNER_TEMP/known_hosts" \
+                "$USER_@$HOST" "--rollback $prev"
+            echo "Rollback to \`$prev\` sent." | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
+          git config user.name "acbuilds-bot"
+          git config user.email "acbuilds-bot@users.noreply.github.com"
+          echo "${{ github.sha }}" >> deploy/BLACKLIST.txt
+          git add deploy/BLACKLIST.txt
+          git commit -m "deploy: blacklist ${{ github.sha }} (failed post-deploy verification) [skip ci]"
+          git push origin HEAD:main
+          echo "Commit ${{ github.sha }} added to deploy/BLACKLIST.txt - it will never be redeployed as-is." | tee -a "$GITHUB_STEP_SUMMARY"
+          exit 1

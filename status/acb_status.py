@@ -273,6 +273,50 @@ def host_stats():
     return d
 
 
+def db_health():
+    """{running, healthy} for ace-db using the same docker inspect pattern deploy.sh's db-wait loop uses."""
+    code, out, _ = sh(["docker", "inspect", "-f", "{{.State.Running}}|{{if .State.Health}}{{.State.Health.Status}}{{end}}", DB])
+    if code != 0:
+        return {"running": False, "healthy": False}
+    running, health = (out.strip().split("|") + ["", ""])[:2]
+    return {"running": running == "true", "healthy": health == "healthy"}
+
+
+def disk_percent(path="/opt/acbuilds"):
+    try:
+        st = os.statvfs(path)
+        used = st.f_blocks - st.f_bfree
+        return round(100.0 * used / st.f_blocks, 1) if st.f_blocks else None
+    except Exception:
+        return None
+
+
+def health():
+    """A single pass/fail view for CI and the scheduled healthcheck workflow: is the whole stack actually serving."""
+    now = datetime.datetime.now(datetime.timezone.utc)
+    out = {"checked_at": now.strftime("%Y-%m-%dT%H:%M:%SZ")}
+    servers = {}
+    for key, _label, cont, _port, _shard in SERVERS:
+        info = container_info(cont)
+        running = bool(info.get("running"))
+        world_open = parse_logs(cont)["world_open"] if running else False
+        servers["ace_server" if key == "stock" else "ace_vr_server"] = {"running": running, "world_open": world_open}
+    out.update(servers)
+    out["ace_db"] = db_health()
+    stats = docker_mem()
+    load = host_stats().get("load")
+    out["cpu_percent"] = round(load[0] * 100 / (os.cpu_count() or 1), 1) if load else None
+    mem = host_stats()
+    out["ram_percent"] = round(100.0 * (mem["mem_total_mb"] - mem["mem_avail_mb"]) / mem["mem_total_mb"], 1) if mem.get("mem_total_mb") else None
+    out["disk_percent"] = disk_percent()
+    out["overall_healthy"] = bool(
+        out["ace_server"]["running"] and out["ace_server"]["world_open"]
+        and out["ace_vr_server"]["running"] and out["ace_vr_server"]["world_open"]
+        and out["ace_db"]["running"] and out["ace_db"]["healthy"]
+    )
+    return out
+
+
 def docker_mem():
     code, out, _ = sh(["docker", "stats", "--no-stream", "--format", "{{.Name}}|{{.CPUPerc}}|{{.MemUsage}}"], 40)
     m = {}
@@ -377,6 +421,13 @@ def make_handler(state, index_path):
                     self._send(200, json.dumps(state.data), "application/json")
             elif path == "/healthz":
                 self._send(200, "ok", "text/plain")
+            elif path == "/api/health":
+                try:
+                    self._send(200, json.dumps(health()), "application/json")
+                except Exception as e:
+                    self._send(200, json.dumps({"overall_healthy": False, "error": str(e),
+                                                  "checked_at": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}),
+                               "application/json")
             else:
                 self._send(404, "not found", "text/plain")
 
