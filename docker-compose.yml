@@ -1,11 +1,17 @@
 # ACBuilds: two containers - ace-db (MariaDB, pre-seeded) and ace-server (ACE). Update either one alone with ./acb.sh update server|db
 name: acbuilds
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "50m"
+    max-file: "3"
 services:
   ace-db:
     image: ghcr.io/mossbuilds/acbuilds-db:${ACB_TAG:-latest}
     build: { context: ., dockerfile: Dockerfile.db }
     container_name: ace-db
     restart: unless-stopped
+    logging: *default-logging
     environment:
       INNODB_BUFFER_POOL_SIZE: ${INNODB_BUFFER_POOL_SIZE:-2G}
     volumes:
@@ -16,6 +22,7 @@ services:
     build: { context: ., dockerfile: Dockerfile.server }
     container_name: ace-server
     restart: unless-stopped
+    logging: *default-logging
     depends_on:
       ace-db: { condition: service_healthy }
     ports:
@@ -38,6 +45,7 @@ services:
       args: { ACE_REPO: "https://github.com/Thwargle/ACE.git", ACE_REF: master }
     container_name: ace-vr-db
     restart: unless-stopped
+    logging: *default-logging
     environment:
       INNODB_BUFFER_POOL_SIZE: ${INNODB_BUFFER_POOL_SIZE:-2G}
     volumes:
@@ -53,6 +61,7 @@ services:
       args: { ACE_REPO: "https://github.com/Thwargle/ACE.git", ACE_REF: master }
     container_name: ace-vr-server
     restart: unless-stopped
+    logging: *default-logging
     depends_on:
       ace-vr-db: { condition: service_healthy }
     ports:

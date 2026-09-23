@@ -10,9 +10,17 @@
 #                                  that the world opens (first response to a healthcheck failure)
 #   deploy.sh --rollback <version> recovery: pin ACB_TAG=<version> (an existing GHCR tag, e.g. v1.78.4816-acb.3), pull and
 #                                  restart on that image only - compose/config files and the database are left alone
+#   deploy.sh --heal               run heal.sh once, immediately (does not take the deploy lock itself - heal.sh takes
+#                                  it, so a normal deploy and a heal pass can never run at the same time either way)
 set -euo pipefail
 APP=/opt/acbuilds
 KEEP=14                           # backups kept
+
+# --heal execs heal.sh BEFORE this script takes .deploy.lock below, so the two never deadlock over the same flock.
+if [ "${1:-${SSH_ORIGINAL_COMMAND:-}}" = "--heal" ]; then
+  exec "$APP/heal.sh"
+fi
+
 cd "$APP"
 exec 9>"$APP/.deploy.lock"; flock -n 9 || { echo "another deploy is running"; exit 1; }
 
@@ -138,6 +146,12 @@ for f in acb_status.py index.html; do
   curl -fsSL "https://raw.githubusercontent.com/mossbuilds/ACBuilds/$SHA/status/$f" -o "status/$f.new" && mv "status/$f.new" "status/$f" || { rm -f "status/$f.new"; echo "WARNING: could not update status/$f"; }
 done
 sudo -n /usr/bin/systemctl restart acb-status 2>/dev/null || echo "note: acb-status service not installed or not restartable by this user"
+
+echo "== self-heal script (deploy/vps/heal.sh, heal_lib.py)"
+for f in heal.sh heal_lib.py; do
+  curl -fsSL "https://raw.githubusercontent.com/mossbuilds/ACBuilds/$SHA/deploy/vps/$f" -o "$f.new" && mv "$f.new" "$f" || { rm -f "$f.new"; echo "WARNING: could not update $f"; }
+done
+chmod 755 heal.sh; chmod 644 heal_lib.py 2>/dev/null || true
 
 ls dats/client_portal.dat dats/client_cell_1.dat dats/client_local_English.dat >/dev/null 2>&1 \
   || { echo "ERROR: AC DAT files missing in $APP/dats (client_portal.dat, client_cell_1.dat, client_local_English.dat)"; exit 1; }

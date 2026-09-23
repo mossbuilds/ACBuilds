@@ -1,9 +1,10 @@
 name: healthcheck
 
-# Runs independently of build-and-publish: catches the VPS going unhealthy for reasons that have nothing to do with a new
-# image (host resource exhaustion, a crashed container, a stuck world). Never touches deploy/LAST_GOOD.txt or
-# deploy/BLACKLIST.txt - those describe whether a given BUILD verified, and a scheduled-healthcheck failure isn't
-# necessarily the currently-deployed version's fault (could be transient or host-level).
+# The EXTERNAL watchdog. On-box heal.sh (deploy/vps/heal.sh, via acb-heal.timer) is now the PRIMARY healer: it checks
+# and remediates every 3 minutes, on the box, without waiting on GitHub Actions. This workflow's job is narrower -
+# nudge heal.sh with --heal when it can, and tell Tom when on-box healing has been exhausted (needs_human) or the
+# box is unreachable outright. It never runs its own restart/rollback ladder in parallel with heal.sh's - that would
+# let the two fight over the same containers - it only ever asks heal.sh to run, then waits and re-polls.
 on:
   schedule:
     - cron: "*/30 * * * *"
@@ -11,80 +12,146 @@ on:
 
 permissions:
   contents: read
+  issues: write
 
 concurrency:
   group: vps-deploy
   cancel-in-progress: false
+
+env:
+  ISSUE_TITLE: "ACBuilds server needs attention"
+  ISSUE_LABEL: heal-alert
 
 jobs:
   healthcheck:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Poll /api/health, restart-then-rollback if unhealthy
+      - name: Ensure the heal-alert label exists
         env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh label create "$ISSUE_LABEL" --color B60205 --description "on-box self-heal exhausted or the VPS is unreachable" 2>/dev/null || true
+      - name: Poll, nudge heal.sh if needed, alert only when warranted
+        env:
+          GH_TOKEN: ${{ github.token }}
           STATUS_PASS: ${{ secrets.STATUS_PASSWORD }}
           KEY: ${{ secrets.VPS_SSH_KEY }}
           KNOWN: ${{ secrets.VPS_KNOWN_HOSTS }}
           HOST: ${{ secrets.VPS_HOST }}
           USER_: ${{ secrets.VPS_USER }}
         run: |
-          check() { curl -fsS -u "tom:$STATUS_PASS" "https://ace.mossbuilds.xyz/api/health" 2>/dev/null || echo ""; }
+          set +e
+          check() {
+            for i in 1 2 3; do
+              body=$(curl -fsS -u "tom:$STATUS_PASS" "https://ace.mossbuilds.xyz/api/health" 2>/dev/null)
+              [ -n "$body" ] && { echo "$body"; return 0; }
+              sleep 20
+            done
+            return 1
+          }
           remote() {
             install -m 600 /dev/null "$RUNNER_TEMP/key"; printf '%s\n' "$KEY" > "$RUNNER_TEMP/key"
             printf '%s\n' "$KNOWN" > "$RUNNER_TEMP/known_hosts"
             ssh -i "$RUNNER_TEMP/key" -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$RUNNER_TEMP/known_hosts" \
                 "$USER_@$HOST" "$1"
           }
-          healthy() { echo "$1" | jq -r '.overall_healthy // false' 2>/dev/null || echo false; }
+          jf() { echo "$1" | jq -r "$2" 2>/dev/null; }
+
+          find_open_issue() { gh issue list --label "$ISSUE_LABEL" --state open --search "in:title \"$ISSUE_TITLE\"" --json number --jq '.[0].number // empty'; }
+
+          open_or_comment() {
+            local msg="$1"
+            local n; n=$(find_open_issue)
+            if [ -n "$n" ]; then
+              gh issue comment "$n" --body "$msg"
+            else
+              gh issue create --title "$ISSUE_TITLE" --label "$ISSUE_LABEL" --body "$msg"
+            fi
+          }
+
+          close_if_open() {
+            local n; n=$(find_open_issue)
+            if [ -n "$n" ]; then
+              gh issue comment "$n" --body "Recovered at $(date -u +%FT%TZ)."
+              gh issue close "$n"
+            fi
+          }
 
           body1=$(check)
-          h1=$(healthy "$body1")
-          echo "first poll: overall_healthy=$h1"
-          if [ "$h1" = "true" ]; then
+          if [ -z "$body1" ]; then
+            echo "unreachable on first poll - trying --heal over SSH"
+            remote "--heal"
+            ssh_rc=$?
+            if [ "$ssh_rc" -ne 0 ]; then
+              msg="**VPS unreachable** - /api/health did not answer after 3 tries, and SSH \`--heal\` also failed (rc=$ssh_rc). No Contabo API power-cycle is configured; power-cycle from the Contabo panel. Run: $(date -u +%FT%TZ)."
+              open_or_comment "$msg"
+              echo "## Healthcheck: VPS unreachable, SSH also failed" >> "$GITHUB_STEP_SUMMARY"
+              echo "$msg" >> "$GITHUB_STEP_SUMMARY"
+              exit 1
+            fi
+            sleep 150
+            body1=$(check)
+            if [ -z "$body1" ]; then
+              msg="**VPS unreachable** - /api/health still not answering after an SSH \`--heal\` nudge and a 150s wait. No Contabo API power-cycle is configured; power-cycle from the Contabo panel. Run: $(date -u +%FT%TZ)."
+              open_or_comment "$msg"
+              echo "## Healthcheck: VPS still unreachable after --heal" >> "$GITHUB_STEP_SUMMARY"
+              echo "$msg" >> "$GITHUB_STEP_SUMMARY"
+              exit 1
+            fi
+          fi
+
+          overall=$(jf "$body1" '.overall_healthy // false')
+          heal_state=$(jf "$body1" '.heal.state // "unknown"')
+          incident_since=$(jf "$body1" '.heal.incident_since // empty')
+
+          if [ "$overall" = "true" ] && [ "$heal_state" = "healthy" ]; then
+            close_if_open
             echo "## Healthcheck: healthy" >> "$GITHUB_STEP_SUMMARY"
-            echo "No action taken." >> "$GITHUB_STEP_SUMMARY"
+            echo "overall_healthy=true, heal.state=healthy. No action taken." >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
 
-          echo "unhealthy - restarting the two game server containers (first response, no image pull, no DB change)"
-          remote "--restart" || echo "note: --restart command returned non-zero (server may still be settling)"
-          sleep 60
+          echo "reachable but not healthy (overall_healthy=$overall heal.state=$heal_state) - nudging heal.sh"
+          remote "--heal" || echo "note: --heal returned non-zero (it may still have made progress)"
+          sleep 150
           body2=$(check)
-          h2=$(healthy "$body2")
-          echo "post-restart poll: overall_healthy=$h2"
-          if [ "$h2" = "true" ]; then
-            {
-              echo "## Healthcheck: recovered by restart"
-              echo "First poll was unhealthy (\`$body1\`); \`deploy.sh --restart\` brought it back."
-            } >> "$GITHUB_STEP_SUMMARY"
+          if [ -z "$body2" ]; then body2="$body1"; fi
+          overall2=$(jf "$body2" '.overall_healthy // false')
+          heal_state2=$(jf "$body2" '.heal.state // "unknown"')
+          rung2=$(jf "$body2" '.heal.rung // 0')
+          incident_since2=$(jf "$body2" '.heal.incident_since // empty')
+          failing2=$(jf "$body2" '.heal.failing // [] | join(", ")')
+
+          if [ "$overall2" = "true" ] && [ "$heal_state2" = "healthy" ]; then
+            close_if_open
+            echo "## Healthcheck: recovered after a --heal nudge" >> "$GITHUB_STEP_SUMMARY"
+            echo "First poll was unhealthy; on-box heal.sh brought it back." >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
 
-          prev=$(grep -vE '^\s*#|^\s*$' deploy/LAST_GOOD.txt | head -n1 || true)
-          if [ -z "$prev" ]; then
+          old_enough=false
+          if [ -n "$incident_since2" ]; then
+            since_epoch=$(date -u -d "$incident_since2" +%s 2>/dev/null || echo 0)
+            now_epoch=$(date -u +%s)
+            [ "$since_epoch" -gt 0 ] && [ $(( (now_epoch - since_epoch) / 60 )) -gt 60 ] && old_enough=true
+          fi
+
+          if [ "$heal_state2" = "needs_human" ] || [ "$old_enough" = "true" ]; then
+            body_compact=$(echo "$body2" | jq -c . 2>/dev/null || echo "$body2")
+            run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+            msg="**Still unhealthy.** failing: ${failing2:-unknown}
+          heal.state=$heal_state2 rung=$rung2 incident_since=${incident_since2:-unknown}
+          Last /api/health: \`$body_compact\`
+          Run: $run_url"
+            open_or_comment "$msg"
             {
-              echo "## Healthcheck: still unhealthy after restart - NO ROLLBACK ATTEMPTED"
-              echo "deploy/LAST_GOOD.txt has no recorded version yet, so an automatic rollback has nothing to target."
-              echo "Last /api/health: \`$body2\`"
+              echo "## Healthcheck: ALERTING"
+              echo "$msg"
             } >> "$GITHUB_STEP_SUMMARY"
             exit 1
           fi
-          echo "still unhealthy - rolling back to last known-good version $prev"
-          remote "--rollback $prev" || true
-          body3=$(check)
-          h3=$(healthy "$body3")
-          if [ "$h3" = "true" ]; then
-            {
-              echo "## Healthcheck: recovered by rollback"
-              echo "Restart alone did not clear it; rolled back to \`$prev\`, which came back healthy."
-            } >> "$GITHUB_STEP_SUMMARY"
-            exit 0
-          else
-            {
-              echo "## Healthcheck: STILL UNHEALTHY after rollback"
-              echo "Restarted, then rolled back to \`$prev\` - still not healthy. Needs a human."
-              echo "Last /api/health: \`$body3\`"
-            } >> "$GITHUB_STEP_SUMMARY"
-            exit 1
-          fi
+
+          echo "## Healthcheck: healing in progress (rung $rung2), not alerting yet" >> "$GITHUB_STEP_SUMMARY"
+          echo "heal.state=$heal_state2 incident_since=${incident_since2:-unknown} failing: ${failing2:-unknown}" >> "$GITHUB_STEP_SUMMARY"
+          exit 0

@@ -291,6 +291,17 @@ def disk_percent(path="/opt/acbuilds"):
         return None
 
 
+HEAL_JSON = Path(os.environ.get("ACB_HEAL_JSON", "/opt/acbuilds/status/data/heal.json"))
+
+
+def heal_status():
+    """The on-box self-heal state (deploy/vps/heal.sh), or None if it has never run / isn't installed."""
+    try:
+        return json.loads(HEAL_JSON.read_text())
+    except Exception:
+        return None
+
+
 def health():
     """A single pass/fail view for CI and the scheduled healthcheck workflow: is the whole stack actually serving."""
     now = datetime.datetime.now(datetime.timezone.utc)
@@ -309,6 +320,7 @@ def health():
     mem = host_stats()
     out["ram_percent"] = round(100.0 * (mem["mem_total_mb"] - mem["mem_avail_mb"]) / mem["mem_total_mb"], 1) if mem.get("mem_total_mb") else None
     out["disk_percent"] = disk_percent()
+    out["heal"] = heal_status()
     out["overall_healthy"] = bool(
         out["ace_server"]["running"] and out["ace_server"]["world_open"]
         and out["ace_vr_server"]["running"] and out["ace_vr_server"]["world_open"]

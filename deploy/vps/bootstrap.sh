@@ -4,7 +4,8 @@
 # that the deploy user may sudo (nothing else), and authorizes the GitHub deploy key so that it can run nothing except deploy.sh
 # (SSH forced command, no shell, no forwarding). Docker itself is installed by the first pipeline run.
 set -euo pipefail
-PUB="${1:?usage: bootstrap.sh \"ssh-ed25519 AAAA... comment\"}"
+PUB="${1:?usage: bootstrap.sh \"ssh-ed25519 AAAA... comment\" [hopper-token]}"
+HOPPER_TOKEN="${2:-}"
 APP=/opt/acbuilds
 RAW=https://raw.githubusercontent.com/mossbuilds/ACBuilds/main/deploy/vps
 
@@ -39,4 +40,8 @@ if command -v ufw >/dev/null 2>&1; then
   ufw allow 9000:9001/udp comment 'ACBuilds stock ACE'
   ufw allow 9100:9101/udp comment 'ACBuilds VR ACE'
 fi
+# self-heal timer (one-time root install; idempotent, safe to re-run on a rebuilt box)
+curl -fsSL "$RAW/install-heal.sh" -o /root/acbuilds-install-heal.sh
+bash /root/acbuilds-install-heal.sh "$HOPPER_TOKEN"
+
 echo "== bootstrap done. Next: copy the AC DAT files (client_portal.dat, client_cell_1.dat, client_local_English.dat) to $APP/dats"
