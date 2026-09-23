@@ -1,0 +1,10 @@
+{
+  "Name": "RecallCooldown",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "Optional shared per-player cooldown across Portal Recall, Lifestone Recall and Primary/Secondary Portal Tie Recall; off by default.",
+  "Version": "1.0.0",
+  "Enabled": true,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}
