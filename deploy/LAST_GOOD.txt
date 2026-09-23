@@ -1,6 +1,1 @@
-# Placeholder: no verified deploy has run yet under the new verify/rollback flow.
-# This file is written automatically by build.yml's "verify" job the first time a deploy passes
-# post-deploy /api/health checks - it will then contain a single line with the version string
-# (e.g. v1.78.4816-acb.3) that deploy.sh --rollback can target.
-# Judgment call: we could not determine "the current :latest version" from a GH release (no tags/releases
-# exist in this local clone), so this starts as a placeholder rather than a guessed version string.
+v1.78.4816-acb.41

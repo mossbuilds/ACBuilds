@@ -22,7 +22,7 @@ ROLLBACK_VERSION=""
 case "$ARG" in
   --recreate-db|--backup|--restart) MODE="$ARG"; SHA="main" ;;
   --rollback\ *) MODE="--rollback"; ROLLBACK_VERSION="${ARG#--rollback }"; SHA="main"
-    [[ -n "$ROLLBACK_VERSION" ]] || { echo "refusing: --rollback needs a version"; exit 2; } ;;
+    [[ "$ROLLBACK_VERSION" =~ ^[A-Za-z0-9._-]+$ ]] || { echo "refusing: --rollback needs a plain image tag"; exit 2; } ;;
   "") MODE=""; SHA="main" ;;
   *) [[ "$ARG" =~ ^[0-9a-f]{40}$ ]] || { echo "refusing unexpected argument"; exit 2; }; MODE=""; SHA="$ARG" ;;
 esac
@@ -91,7 +91,7 @@ wait_open() {
 }
 
 # Pins (or unpins) the image tag docker-compose.yml's ${ACB_TAG:-latest} resolves to, via the .env file compose reads
-# from its own directory automatically. Used only by --rollback; a normal deploy never touches this (defaults to latest).
+# from its own directory automatically. Set by --rollback; a normal deploy resets it to latest.
 set_tag() {
   local v="$1"
   touch .env
@@ -144,6 +144,10 @@ ls dats/client_portal.dat dats/client_cell_1.dat dats/client_local_English.dat >
 
 backup
 [ "$MODE" = "--backup" ] && exit 0
+
+# A normal deploy always goes back to :latest - otherwise a pin left by an earlier --rollback would keep every later
+# deploy on the old images forever.
+set_tag latest
 
 echo "== pulling images"
 $DC pull
