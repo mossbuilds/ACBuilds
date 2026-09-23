@@ -46,4 +46,8 @@ public class Settings
     /// (QuestPrefix + this name, default "path_necromancer"). Empty string = no gate (anyone who has the
     /// spell can cast it).</summary>
     public string RequirePath { get; set; } = "necromancer";
+
+    /// <summary>Tom 2026-09-23: the bound spells cost mana only - no components needed or used up - when a necromancer
+    /// (RequirePath) casts them. Anyone else still needs the spell's normal components.</summary>
+    public bool FreeComponents { get; set; } = true;
 }

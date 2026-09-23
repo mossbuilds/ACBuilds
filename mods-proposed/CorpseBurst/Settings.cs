@@ -25,4 +25,8 @@ public class Settings
     /// <summary>Necromancer-only gate for BurstSpellId, checked via PathChoice's quest stamp (path_&lt;name&gt;).
     /// Empty string = no gate.</summary>
     public string RequirePath { get; set; } = "necromancer";
+
+    /// <summary>Tom 2026-09-23: the bound spells cost mana only - no components needed or used up - when a necromancer
+    /// (RequirePath) casts them. Anyone else still needs the spell's normal components.</summary>
+    public bool FreeComponents { get; set; } = true;
 }

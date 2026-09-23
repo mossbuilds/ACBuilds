@@ -184,4 +184,29 @@ public class PatchClass(BasicMod mod, string settingsName = "Settings.json") : B
         __result = true;
         return false;
     }
+
+    // Mana-only casting for the bound spells (Tom 2026-09-23). Player.HasComponentsForSpell(Spell) decides the "missing
+    // components" error before the cast and Player.TryBurnComponents(Spell) uses them up after it - both public on
+    // Player (WorldObjects/Player_Magic.cs lines 1227 and 1181). Only this mod's own bound ids, only for a necromancer.
+    private static bool FreeFor(Player p, Spell spell)
+    {
+        var cfg = Cfg;
+        if (cfg is not { Enabled: true, FreeComponents: true } || spell == null) return false;
+        var id = spell.Id;
+        if (id == 0 || !(id == cfg.AttackSpellId || id == cfg.HoldSpellId || id == cfg.FollowSpellId)) return false;
+        return OnPath(p, cfg);
+    }
+
+    [HarmonyPrefix]
+    [HarmonyPatch(typeof(Player), nameof(Player.HasComponentsForSpell), new[] { typeof(Spell) })]
+    public static bool PreHasComponentsForSpell(Player __instance, Spell spell, ref bool __result)
+    {
+        if (!FreeFor(__instance, spell)) return true;
+        __result = true;
+        return false;
+    }
+
+    [HarmonyPrefix]
+    [HarmonyPatch(typeof(Player), nameof(Player.TryBurnComponents), new[] { typeof(Spell) })]
+    public static bool PreTryBurnComponents(Player __instance, Spell spell) => !FreeFor(__instance, spell);
 }

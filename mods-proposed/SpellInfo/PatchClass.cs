@@ -1,5 +1,6 @@
 using System.Linq;
 using ACE.DatLoader;
+using ACE.DatLoader.Entity;
 using ACE.Database.Models.World;
 using ACE.Server.Network;
 using ACE.Server.Network.GameMessages.Messages;
@@ -43,11 +44,20 @@ public class PatchClass(BasicMod mod, string settingsName = "Settings.json") : B
     }
 
     [CommandHandler("spellinfo", AccessLevel.Admin, CommandHandlerFlag.None, 1,
-        "Show a spell's DAT data and a player-castable guess, or find spells by name.", "<id> | find <text>")]
+        "Show a spell's DAT data and a player-castable guess, or find spells by name.", "<id> | find <text> | self [text]")]
     public static void HandleSpellInfo(Session session, params string[] parameters)
     {
         var cfg = Cfg;
         if (cfg is not { Enabled: true }) { Say(session, "SpellInfo is not enabled."); return; }
+
+        if (parameters[0].Equals("self", StringComparison.OrdinalIgnoreCase))
+        {
+            // self-cast spells only: the client casts these on you with nothing selected - the natural fit for a
+            // trigger spell whose mod ability finds its own target (nearest corpse, your minions)
+            var text = parameters.Length > 1 ? string.Join(" ", parameters.Skip(1)) : "";
+            Find(session, text, cfg.FindLimit, selfOnly: true);
+            return;
+        }
 
         if (parameters[0].Equals("find", StringComparison.OrdinalIgnoreCase))
         {
@@ -61,11 +71,16 @@ public class PatchClass(BasicMod mod, string settingsName = "Settings.json") : B
         Show(session, id);
     }
 
-    private static void Find(Session session, string text, int limit)
+    // SpellFlags.SelfTargeted = 0x8 (Source/ACE.Entity/Enum/SpellFlags.cs line 11); SpellBase.Bitfield is the spell's flag
+    // word (Source/ACE.DatLoader/Entity/SpellBase.cs line 16). ACE's own Spell.IsSelfTargeted reads the same bit.
+    private static bool IsSelf(SpellBase sb) => (sb.Bitfield & (uint)SpellFlags.SelfTargeted) != 0;
+
+    private static void Find(Session session, string text, int limit, bool selfOnly = false)
     {
         var table = DatManager.PortalDat.SpellTable;
         var hits = table.Spells
             .Where(kv => kv.Value.Name != null && kv.Value.Name.Contains(text, StringComparison.OrdinalIgnoreCase))
+            .Where(kv => !selfOnly || (IsSelf(kv.Value) && kv.Value.Formula != null && kv.Value.Formula.Count > 0))
             .OrderBy(kv => kv.Key)
             .Take(Math.Max(1, limit))
             .ToList();
@@ -73,7 +88,7 @@ public class PatchClass(BasicMod mod, string settingsName = "Settings.json") : B
         if (hits.Count == 0) { Say(session, $"No spell name contains \"{text}\"."); return; }
         Say(session, $"Spells matching \"{text}\" (up to {limit}):");
         foreach (var kv in hits)
-            Say(session, $"  {kv.Key}: {kv.Value.Name}");
+            Say(session, $"  {kv.Key}: {kv.Value.Name}  [{(IsSelf(kv.Value) ? "self" : "target")}, power {kv.Value.Power}, {kv.Value.School}]");
     }
 
     private static void Show(Session session, uint id)
@@ -87,6 +102,8 @@ public class PatchClass(BasicMod mod, string settingsName = "Settings.json") : B
         Say(session, $"Spell {id}: {sb.Name}");
         Say(session, $"  School: {sb.School}   Category: {sb.Category}   MetaSpellType: {sb.MetaSpellType}");
         Say(session, $"  Power: {sb.Power}   BaseMana: {sb.BaseMana}   NonComponentTargetType: {sb.NonComponentTargetType}");
+        Say(session, IsSelf(sb) ? "  Targeting: self-cast - no target needed (the client casts it on you)"
+                                : "  Targeting: needs a target selected before casting");
 
         var comps = sb.Formula;
         string formulaText;
