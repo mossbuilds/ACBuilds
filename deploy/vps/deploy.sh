@@ -38,7 +38,8 @@ case "$ARG" in
   *\ --warn\ *)
     SHA="${ARG%% --warn *}"; WARN="${ARG##* --warn }"; MODE=""
     [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "refusing unexpected argument"; exit 2; }
-    [[ "$WARN" =~ ^[0-9]+$ ]] && [ "$WARN" -ge 0 ] && [ "$WARN" -le 60 ] || { echo "refusing: --warn needs a whole number of minutes, 0-60"; exit 2; } ;;
+    [[ "$WARN" =~ ^[0-9]+$ ]] && [ "$WARN" -ge 0 ] && [ "$WARN" -le 60 ] || { echo "refusing: --warn needs a whole number of minutes, 0-60"; exit 2; }
+    WARN=$((10#$WARN)) ;;   # "08" is not octal here
   *) [[ "$ARG" =~ ^[0-9a-f]{40}$ ]] || { echo "refusing unexpected argument"; exit 2; }; MODE=""; SHA="$ARG" ;;
 esac
 # Docker: the pipeline installs it if missing and upgrades it when a newer version exists, through the ONE root-owned script this
