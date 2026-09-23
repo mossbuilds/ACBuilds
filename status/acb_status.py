@@ -187,6 +187,38 @@ def container_info(name):
 
 
 LOG_TS = re.compile(r"^(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d)")
+WORLD_OPEN_JSON = Path(os.environ.get("ACB_WORLD_OPEN_JSON", "/opt/acbuilds/status/data/world_open.json"))
+
+
+def world_open_now(container):
+    """Has the world opened since this container's CURRENT start? "World is now open" is printed once per start:
+    after `docker compose restart` the old start's line is still in the log (a false "open"), and after log rotation
+    (50m x 3) a long-running server's line is gone (a false "closed"). So: look only at the log since the current
+    start, and remember the first sighting per start in world_open.json (shared with deploy/vps/heal_lib.py)."""
+    code, started, _ = sh(["docker", "inspect", "-f", "{{.State.StartedAt}}", container])
+    started = (started or "").strip()
+    if code != 0 or not started:
+        return False
+    key = started[:19]
+    try:
+        marks = json.loads(WORLD_OPEN_JSON.read_text())
+    except Exception:
+        marks = {}
+    if marks.get(container) == key:
+        return True
+    code, out, err = sh(["docker", "logs", "--since", started, container], 40)
+    if "World is now open" not in (out or "") + (err or ""):
+        return False
+    marks[container] = key
+    try:
+        WORLD_OPEN_JSON.parent.mkdir(parents=True, exist_ok=True)
+        tmp = WORLD_OPEN_JSON.with_name(f"{WORLD_OPEN_JSON.name}.{os.getpid()}.tmp")
+        tmp.write_text(json.dumps(marks))
+        os.replace(tmp, WORLD_OPEN_JSON)
+    except OSError:
+        pass
+    return True
+
 
 
 def parse_logs(container):
@@ -199,9 +231,7 @@ def parse_logs(container):
     for line in text.splitlines():
         m = LOG_TS.match(line)
         ts = m.group(1) if m else ""
-        if "World is now open" in line:
-            res["world_open"] = True
-        elif "Current Server Binary:" in line:
+        if "Current Server Binary:" in line:
             res["binary"] = line.split("Current Server Binary:")[1].strip()[:80]
         mc = re.search(r"client (\S+) connected with verified password", line)
         if mc:
@@ -213,6 +243,7 @@ def parse_logs(container):
             res["errors_24h"] += 1
         if ts:
             res["last_event"] = ts
+    res["world_open"] = world_open_now(container)
     res["online"] = {a: t for a, (s, t) in events.items() if s == "on"}
     return res
 

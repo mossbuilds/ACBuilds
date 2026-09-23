@@ -10,7 +10,7 @@ Subcommands:
 Everything here is read-only except the docker/systemctl/hopper calls each rung fires. State lives in
 heal-state.json next to this script's APP dir; stdlib only (this runs on the VPS as the 'acbuilds' user).
 """
-import argparse, datetime, json, os, subprocess, sys, urllib.request, urllib.error
+import argparse, copy, datetime, json, os, subprocess, sys, urllib.request, urllib.error
 
 APP = "/opt/acbuilds"
 STATE_FILE = os.path.join(APP, "heal-state.json")
@@ -27,6 +27,14 @@ REBOOT_MIN_UPTIME_S = 30 * 60
 CRASH_LOOP_WINDOW_S = 3600
 CRASH_LOOP_LIMIT = 3
 HEALTHY_RUNS_TO_CLOSE = 2
+ESCALATE_AFTER_S = STILL_FAILING_RUNS * INTERVAL_S - 60   # ~5 min: two timer runs, less jitter
+NEEDS_HUMAN_RUNG = 6
+# Failures a restart / rollback / docker restart / reboot can plausibly fix. Anything else (acb-status, disk) has only
+# its targeted fix; if that does not work, restarting the game or rebooting the box will not either - alert instead.
+CORE = {"ace-db", "ace-server", "ace-vr-server", "memory"}
+# "World is now open" is printed ONCE per start. After log rotation (50m x 3) it is gone from a long-running server's
+# log, so the first sighting per container start is recorded here (shared with the status page, acb_status.py).
+WORLD_OPEN_FILE = os.path.join(APP, "status", "data", "world_open.json")
 
 RUNG_NAMES = {0: "none", 1: "targeted", 2: "restart-all", 3: "rollback", 4: "restart-docker", 5: "reboot", 6: "needs_human"}
 
@@ -66,6 +74,8 @@ DEFAULT_STATE = {
     "incident_since": None,
     "rung": 0,
     "rung_last_action_at": None,
+    "rung_fired_at": None,        # when the current rung's remediation actually fired
+    "needs_human_since": None,
     "consecutive_healthy_runs": 0,
     "alerted": False,
     "last_check": None,
@@ -80,11 +90,11 @@ def load_state():
     try:
         with open(STATE_FILE) as f:
             d = json.load(f)
-        s = dict(DEFAULT_STATE)
+        s = copy.deepcopy(DEFAULT_STATE)
         s.update(d)
         return s
     except Exception:
-        return dict(DEFAULT_STATE)
+        return copy.deepcopy(DEFAULT_STATE)
 
 
 def save_state(state):
@@ -154,10 +164,35 @@ def container_inspect(name):
     return {"running": running == "true", "started": started, "health": health, "version": version}
 
 
+def _load_world_open():
+    try:
+        with open(WORLD_OPEN_FILE) as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
 def world_open_since(name, started_iso):
-    # started_iso is Docker's own RFC3339-with-nanos StartedAt; --since accepts it directly.
+    """True once "World is now open" has appeared since this container's current start (sticky per start)."""
+    key = (started_iso or "")[:19]
+    if not key:
+        return False
+    marks = _load_world_open()
+    if marks.get(name) == key:
+        return True
     code, out, err = sh(["docker", "logs", "--since", started_iso, name], timeout=30)
-    return "World is now open" in ((out or "") + (err or ""))
+    if "World is now open" not in ((out or "") + (err or "")):
+        return False
+    marks[name] = key
+    try:
+        os.makedirs(os.path.dirname(WORLD_OPEN_FILE), exist_ok=True)
+        tmp = f"{WORLD_OPEN_FILE}.{os.getpid()}.tmp"
+        with open(tmp, "w") as f:
+            json.dump(marks, f)
+        os.replace(tmp, WORLD_OPEN_FILE)
+    except OSError:
+        pass
+    return True
 
 
 def container_age_s(started_iso):
@@ -183,8 +218,9 @@ def check_server(name):
         return {"running": False, "world_open": False, "starting": False, "ok": False, "version": info.get("version", "")}
     age = container_age_s(info.get("started", ""))
     opened = world_open_since(name, info.get("started", ""))
+    # started < 6 min ago and not open yet: still booting. Not ok, not failing - the ladder waits for it.
     starting = (not opened) and age < 360
-    return {"running": True, "world_open": opened, "starting": starting, "ok": opened or starting, "version": info.get("version", "")}
+    return {"running": True, "world_open": opened, "starting": starting, "ok": opened, "version": info.get("version", "")}
 
 
 def check_disk():
@@ -225,23 +261,24 @@ def run_checks():
     disk = check_disk()
     mem = check_memory()
     status = check_acb_status()
+    # Informational only: docker-proxy binds the host port whether or not ACE is listening, and with the userland
+    # proxy off nothing shows at all - so it can neither prove nor disprove health, and must never trigger a fix.
     ports = check_udp_ports()
-    failing = []
+    failing, pending = [], []
     if not db["ok"]:
         failing.append("ace-db")
     for name, s in servers.items():
-        if not s["ok"]:
-            failing.append(name)
+        if s["ok"]:
+            continue
+        (pending if s["starting"] else failing).append(name)
     if not disk["ok"]:
         failing.append("disk")
     if not mem["ok"]:
         failing.append("memory")
     if not status["ok"]:
         failing.append("acb-status")
-    if not ports["ok"]:
-        failing.append("udp-ports")
     return {"db": db, "servers": servers, "disk": disk, "memory": mem, "acb_status": status, "udp_ports": ports,
-            "failing": failing, "healthy": len(failing) == 0}
+            "failing": failing, "pending": pending, "healthy": not failing and not pending}
 
 
 # ------------------------------------------------------------------ targeted (rung 1) fixes
@@ -350,6 +387,14 @@ def uptime_s():
         return 0.0
 
 
+def _finish(state, checks, dry_run, summary, rc=0):
+    if not dry_run:
+        save_state(state)
+    write_status(state, checks)
+    print(summary)
+    return rc
+
+
 def do_run(dry_run):
     state = load_state()
     checks = run_checks()
@@ -361,48 +406,55 @@ def do_run(dry_run):
         if state["incident_open"] and state["consecutive_healthy_runs"] >= HEALTHY_RUNS_TO_CLOSE:
             was_alerted = state["alerted"]
             since = state["incident_since"]
-            state.update(incident_open=False, incident_since=None, rung=0, rung_last_action_at=None, alerted=False,
-                         targeted_fire_counts={})
+            # targeted_fire_counts are deliberately NOT reset: they age out after an hour on their own, so a server
+            # that keeps falling over across several short incidents still trips the crash-loop guard.
+            state.update(incident_open=False, incident_since=None, rung=0, rung_fired_at=None,
+                         rung_last_action_at=None, alerted=False, needs_human_since=None)
             if was_alerted and not dry_run:
                 hopper_post(f"ACBuilds recovered: all checks healthy (incident since {since})", "acbuilds-heal", ["acbuilds"])
             summary = f"recovered, incident closed (was open since {since})"
-        if not dry_run:
-            save_state(state)
-        write_status(state, checks)
-        print(summary)
-        return 0
+        return _finish(state, checks, dry_run, summary)
 
-    # unhealthy this run
+    if not checks["failing"]:
+        # only servers still booting after a (re)start: give them time, change nothing, do not count as healthy
+        return _finish(state, checks, dry_run, f"waiting: {', '.join(checks['pending'])} starting")
+
     state["consecutive_healthy_runs"] = 0
     if not state["incident_open"]:
-        state["incident_open"] = True
-        state["incident_since"] = iso(now())
-        state["rung"] = 0
-        state["rung_last_action_at"] = None
+        state.update(incident_open=True, incident_since=iso(now()), rung=0, rung_fired_at=None, needs_human_since=None)
 
-    rung = max(state.get("rung", 0), 1)
+    rung = state.get("rung", 0)
+    fired = parse_iso(state.get("rung_fired_at"))
+    failing_txt = ", ".join(checks["failing"])
+    if 1 <= rung < NEEDS_HUMAN_RUNG and fired and (now() - fired).total_seconds() < ESCALATE_AFTER_S:
+        return _finish(state, checks, dry_run,
+                       f"waiting: rung {rung} ({RUNG_NAMES[rung]}) fired {state['rung_fired_at']}, giving it time "
+                       f"(failing: {failing_txt})")
 
-    # escalate if the current rung fired and the same failure persisted >= STILL_FAILING_RUNS * INTERVAL_S
-    last_fire = parse_iso(state.get("rung_last_action_at"))
-    if last_fire and (now() - last_fire).total_seconds() >= STILL_FAILING_RUNS * INTERVAL_S:
+    core = any(c in CORE for c in checks["failing"])
+    if rung >= NEEDS_HUMAN_RUNG:
+        rung = NEEDS_HUMAN_RUNG
+    elif rung == 0:
+        rung = 1
+    elif not core:
+        rung = NEEDS_HUMAN_RUNG   # acb-status / disk: nothing past the targeted fix helps
+    else:
         rung += 1
+    if rung == 1 and any(fire_count(state, c) >= CRASH_LOOP_LIMIT for c in checks["failing"]):
+        rung = 2 if core else NEEDS_HUMAN_RUNG
 
-    # crash-loop guard for rung 1: if the targeted fix for the failing component(s) fired 3x in the last hour, skip it
-    if rung == 1:
-        comps = checks["failing"]
-        looping = any(fire_count(state, c) >= CRASH_LOOP_LIMIT for c in comps)
-        if looping:
-            rung = 2
-
-    action_desc, component, ok, rollback_version = "", "", True, None
+    action_desc, component, ok, rollback_version, fired_now = "", "", True, None, False
 
     if rung == 1:
         component, action_desc, ok = targeted_fix(checks, dry_run)
+        fired_now = True
         if not dry_run:
-            note_fire(state, component)
+            for c in component.split(","):
+                note_fire(state, c)
 
     elif rung == 2:
         component = "all"
+        fired_now = True
         if dry_run:
             action_desc = "would: docker compose restart of ace-db ace-server ace-vr-server"
         else:
@@ -413,20 +465,19 @@ def do_run(dry_run):
     elif rung == 3:
         last_good = fetch_last_good()
         running = running_version()
-        if last_good and running and last_good == running:
+        if not last_good:
+            action_desc = "no LAST_GOOD.txt available - cannot roll back"
+            rung = 4
+        elif running and last_good == running:
             rung = 4  # already on LAST_GOOD - nothing to roll back to, escalate this run
         else:
             component = "rollback"
-            if not last_good:
-                action_desc = "no LAST_GOOD.txt available - cannot roll back"
-                ok = False
-                rung = 4
+            fired_now = True
+            if dry_run:
+                action_desc = f"would: deploy.sh --rollback {last_good} (running={running})"
             else:
-                if dry_run:
-                    action_desc = f"would: deploy.sh --rollback {last_good} (running={running})"
-                else:
-                    action_desc = f"rollback to {last_good} requested (running={running})"
-                    rollback_version = last_good
+                action_desc = f"rollback to {last_good} requested (running={running})"
+                rollback_version = last_good
 
     if rung == 4:
         component = "docker"
@@ -435,6 +486,7 @@ def do_run(dry_run):
             action_desc = "docker restart on cooldown (< 2h since last one) - escalating"
             rung = 5
         else:
+            fired_now = True
             if dry_run:
                 action_desc = "would: sudo systemctl restart docker"
             else:
@@ -449,29 +501,33 @@ def do_run(dry_run):
         up = uptime_s()
         if last and (now() - last).total_seconds() < REBOOT_COOLDOWN_S:
             action_desc = "reboot on cooldown (< 6h since last one) - escalating"
-            rung = 6
+            rung = NEEDS_HUMAN_RUNG
         elif up < REBOOT_MIN_UPTIME_S:
             action_desc = f"uptime only {int(up)}s (< 30 min) - refusing to reboot again so soon, escalating"
-            rung = 6
+            rung = NEEDS_HUMAN_RUNG
+        elif dry_run:
+            action_desc = "would: sudo reboot"
         else:
-            state["last_reboot"] = iso(now())
-            if not dry_run:
-                save_state(state)  # record BEFORE rebooting - if it doesn't come back, the state still shows we tried
-            if dry_run:
-                action_desc = "would: sudo reboot"
-            else:
-                action_desc = "rebooting the host"
-                record_action(state, rung, "reboot", component, "fired")
-                save_state(state)
-                sh(["sudo", "-n", "/usr/sbin/reboot"], timeout=10)
+            # record BEFORE rebooting - if the box does not come back, the state still shows we tried
+            state.update(last_reboot=iso(now()), rung=5, rung_fired_at=iso(now()))
+            record_action(state, 5, "reboot", component, "fired")
+            write_status(state, checks)
+            save_state(state)
+            print("rung=5 (reboot) component=host: rebooting the host")
+            sh(["sudo", "-n", "/usr/sbin/reboot"], timeout=10)
+            return 0
 
-    if rung == 6:
+    if rung == NEEDS_HUMAN_RUNG:
         component = "operator"
+        if not state.get("needs_human_since"):
+            state["needs_human_since"] = iso(now())
         if not state["alerted"]:
-            failing = ", ".join(checks["failing"])
-            rungs_tried = ", ".join(sorted({str(h["rung"]) for h in state["action_history"]})) or "none"
-            text = (f"URGENT from ACBuilds: {failing} failing, tried: rungs {rungs_tried}, "
-                    f"since {state['incident_since']}")
+            rungs_tried = ", ".join(sorted({f"{h['rung']} ({RUNG_NAMES.get(h['rung'], '?')})"
+                                            for h in state["action_history"]
+                                            if parse_iso(h.get("ts")) and state["incident_since"]
+                                            and h["ts"] >= state["incident_since"]})) or "none"
+            text = (f"URGENT from ACBuilds: {failing_txt} failing since {state['incident_since']}; "
+                    f"self-heal tried: {rungs_tried}. SSH root@89.117.147.78, see /opt/acbuilds/heal.log")
             if dry_run:
                 action_desc = f"would post hopper alert: {text}"
             else:
@@ -482,21 +538,18 @@ def do_run(dry_run):
             action_desc = "needs_human - already alerted, re-checking"
 
     state["rung"] = rung
-    if not dry_run and rollback_version is None:
-        record_action(state, rung, action_desc, component, "ok" if ok else "failed")
-        save_state(state)
-    write_status(state, checks)
-
+    if fired_now and not dry_run:
+        state["rung_fired_at"] = iso(now())
     summary = f"rung={rung} ({RUNG_NAMES.get(rung, '?')}) component={component}: {action_desc}"
-    print(summary)
     if rollback_version and not dry_run:
-        # leave the incident state as rung=3/rollback pending; heal.sh performs the rollback itself (needs the
-        # deploy lock released first) and calls `rollback-result` to finish recording it.
+        # heal.sh performs the rollback itself (the deploy lock must be released first), then calls rollback-result
         record_action(state, rung, "rollback requested", component, "pending")
-        save_state(state)
+        _finish(state, checks, dry_run, summary)
         print(f"ROLLBACK_NEEDED {rollback_version}")
         return 42
-    return 0
+    if not dry_run and action_desc != "needs_human - already alerted, re-checking":   # no history spam every 3 min
+        record_action(state, rung, action_desc, component, "ok" if ok else "failed")
+    return _finish(state, checks, dry_run, summary)
 
 
 def do_rollback_result(ok, version):
@@ -509,13 +562,22 @@ def do_rollback_result(ok, version):
 
 
 def write_status(state, checks):
+    if not state["incident_open"]:
+        st = "healthy"
+    elif state.get("rung", 0) >= NEEDS_HUMAN_RUNG:
+        st = "needs_human"
+    else:
+        st = "healing"
     d = {
-        "state": "healthy" if not state["incident_open"] else ("needs_human" if state["rung"] >= 6 and state["alerted"] else "healing"),
+        "state": st,
         "rung": state["rung"],
+        "rung_name": RUNG_NAMES.get(state["rung"], "?"),
         "failing": checks.get("failing", []),
+        "pending": checks.get("pending", []),
         "last_action": (state["action_history"][-1]["action"] if state["action_history"] else None),
         "last_action_at": (state["action_history"][-1]["ts"] if state["action_history"] else None),
         "incident_since": state["incident_since"],
+        "needs_human_since": state.get("needs_human_since"),
         "alerted": state["alerted"],
         "checked_at": iso(now()),
     }

@@ -50,6 +50,7 @@ OUT=$(python3 "$LIB" "${LIB_ARGS[@]}" 2>&1)
 RC=$?
 set -e
 
+echo "$OUT"
 log "$(echo "$OUT" | tail -1)"
 
 if [ "$RC" -ne 42 ] && [ "$RC" -ne 0 ]; then

@@ -14,8 +14,10 @@ permissions:
   contents: read
   issues: write
 
+# Its own group, NOT vps-deploy: GitHub keeps one pending run per group and cancels the older one, so sharing the
+# deploy group could silently cancel a queued deploy. heal.sh and deploy.sh already serialize on the box (flock).
 concurrency:
-  group: vps-deploy
+  group: healthcheck
   cancel-in-progress: false
 
 env:
@@ -105,7 +107,8 @@ jobs:
           heal_state=$(jf "$body1" '.heal.state // "unknown"')
           incident_since=$(jf "$body1" '.heal.incident_since // empty')
 
-          if [ "$overall" = "true" ] && [ "$heal_state" = "healthy" ]; then
+          # "unknown" = heal.json absent (self-heal not installed yet): then /api/health alone decides
+          if [ "$overall" = "true" ] && { [ "$heal_state" = "healthy" ] || [ "$heal_state" = "unknown" ]; }; then
             close_if_open
             echo "## Healthcheck: healthy" >> "$GITHUB_STEP_SUMMARY"
             echo "overall_healthy=true, heal.state=healthy. No action taken." >> "$GITHUB_STEP_SUMMARY"
@@ -123,21 +126,27 @@ jobs:
           incident_since2=$(jf "$body2" '.heal.incident_since // empty')
           failing2=$(jf "$body2" '.heal.failing // [] | join(", ")')
 
-          if [ "$overall2" = "true" ] && [ "$heal_state2" = "healthy" ]; then
+          if [ "$overall2" = "true" ] && { [ "$heal_state2" = "healthy" ] || [ "$heal_state2" = "unknown" ]; }; then
             close_if_open
             echo "## Healthcheck: recovered after a --heal nudge" >> "$GITHUB_STEP_SUMMARY"
             echo "First poll was unhealthy; on-box heal.sh brought it back." >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
 
-          old_enough=false
-          if [ -n "$incident_since2" ]; then
-            since_epoch=$(date -u -d "$incident_since2" +%s 2>/dev/null || echo 0)
-            now_epoch=$(date -u +%s)
-            [ "$since_epoch" -gt 0 ] && [ $(( (now_epoch - since_epoch) / 60 )) -gt 60 ] && old_enough=true
+          # Moss first, then Tom: heal.sh posts needs_human to the hopper, and Moss's loop (every 30 min) gets a go at it.
+          # Tom is emailed (a GitHub issue) only if that alert failed to post, Moss has not fixed it within 45 min, or
+          # the incident has run 90 min whatever the rung.
+          mins_since() { local e; e=$(date -u -d "$1" +%s 2>/dev/null || echo 0); [ "$e" -gt 0 ] && echo $(( ($(date -u +%s) - e) / 60 )) || echo 0; }
+          alerted2=$(jf "$body2" '.heal.alerted // false')
+          nh_since2=$(jf "$body2" '.heal.needs_human_since // empty')
+          escalate=false
+          if [ "$heal_state2" = "needs_human" ]; then
+            if [ "$alerted2" != "true" ]; then escalate=true; fi
+            if [ -n "$nh_since2" ] && [ "$(mins_since "$nh_since2")" -ge 45 ]; then escalate=true; fi
           fi
-
-          if [ "$heal_state2" = "needs_human" ] || [ "$old_enough" = "true" ]; then
+          if [ -n "$incident_since2" ] && [ "$(mins_since "$incident_since2")" -ge 90 ]; then escalate=true; fi
+          old_enough=$escalate
+          if [ "$old_enough" = "true" ]; then
             body_compact=$(echo "$body2" | jq -c . 2>/dev/null || echo "$body2")
             run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
             msg="**Still unhealthy.** failing: ${failing2:-unknown}
