@@ -83,4 +83,40 @@ public class PatchClass(BasicMod mod, string settingsName = "Settings.json") : B
         p.TryCastSpell(spell, aim, tryResist: false);
         Say(session, "The corpse bursts.");
     }
+
+    private static bool OnPath(Player p, Settings cfg)
+    {
+        if (string.IsNullOrEmpty(cfg.RequirePath)) return true;
+        return p.QuestManager.HasQuest("path_" + cfg.RequirePath);
+    }
+
+    /// <summary>
+    /// Binds BurstSpellId to real spellcasting via WorldObject.HandleCastSpell (runs only after a successful
+    /// cast - see RaiseSkeleton's PreHandleCastSpell for the verified hook details). Only a player's own
+    /// direct cast is claimed; every other cast falls through untouched. DoBurst runs its own corpse/target
+    /// search and mana check exactly as /burst does; it is called directly (no ActionChain) because
+    /// HandleCastSpell already runs on the caster's action queue.
+    /// </summary>
+    [HarmonyPrefix]
+    [HarmonyPatch(typeof(WorldObject), "HandleCastSpell", new[] { typeof(Spell), typeof(WorldObject), typeof(WorldObject), typeof(WorldObject), typeof(bool), typeof(bool), typeof(bool) })]
+    public static bool PreHandleCastSpell(WorldObject __instance, Spell spell, WorldObject target, WorldObject itemCaster, bool fromProc, bool equip, ref bool __result)
+    {
+        var cfg = Cfg;
+        if (cfg is not { Enabled: true } || __instance is not Player p || itemCaster != null || fromProc || equip)
+            return true;
+
+        var id = spell.Id;
+        if (id == 0 || id != cfg.BurstSpellId) return true; // 0 = unbound; never claim the "no spell" sentinel
+
+        if (!OnPath(p, cfg))
+        {
+            Say(p.Session, "Only a necromancer can shape this magic.");
+            __result = false;
+            return false;
+        }
+
+        DoBurst(p, cfg);
+        __result = true;
+        return false;
+    }
 }

@@ -74,12 +74,18 @@ public class PatchClass(BasicMod mod, string settingsName = "Settings.json") : B
         var p = session?.Player;
         var cfg = Cfg;
         if (p == null || cfg == null || !cfg.Enabled) { if (session != null) Say(session, "Raise Skeleton is not enabled."); return; }
+        RaiseFromNearestCorpse(p, cfg);
+    }
 
+    /// <summary>Shared by /raiseskel and the spell-bound cast hook. Applies its own per-player cooldown.</summary>
+    public static void RaiseFromNearestCorpse(Player p, Settings cfg)
+    {
+        var session = p.Session;
         lock (Gate)
         {
             if (LastUse.TryGetValue(p.Guid.Full, out var t) && (DateTime.UtcNow - t).TotalSeconds < cfg.CooldownSeconds)
             {
-                Say(session!, "Your dark power is still gathering. Try again in a moment.");
+                if (session != null) Say(session, "Your dark power is still gathering. Try again in a moment.");
                 return;
             }
             LastUse[p.Guid.Full] = DateTime.UtcNow;
@@ -187,6 +193,12 @@ public class PatchClass(BasicMod mod, string settingsName = "Settings.json") : B
     {
         var p = session?.Player;
         if (p == null) return;
+        DismissAll(p);
+    }
+
+    /// <summary>Shared by /dismiss and the spell-bound cast hook.</summary>
+    public static void DismissAll(Player p)
+    {
         List<CombatPet> live;
         lock (Gate) { live = LiveOf(p.Guid.Full).ToList(); Minions[p.Guid.Full].Clear(); }
         foreach (var m in live)
@@ -194,6 +206,49 @@ public class PatchClass(BasicMod mod, string settingsName = "Settings.json") : B
             var pet = m;
             new ActionChain(pet, () => { if (!pet.IsDestroyed) pet.Destroy(); }).EnqueueChain();
         }
-        Say(session!, live.Count == 0 ? "You have no minions." : $"You dismiss {live.Count} minion(s).");
+        if (p.Session != null)
+            Say(p.Session, live.Count == 0 ? "You have no minions." : $"You dismiss {live.Count} minion(s).");
+    }
+
+    /// <summary>True if RequirePath is empty, or the player holds that PathChoice quest stamp. PathChoice is
+    /// an optional sibling mod, so this reads the quest stamp directly (PathChoice.README: "Alternative with
+    /// no reference: player.QuestManager.HasQuest(\"path_necromancer\")") rather than referencing its assembly.</summary>
+    private static bool OnPath(Player p, Settings cfg)
+    {
+        if (string.IsNullOrEmpty(cfg.RequirePath)) return true;
+        return p.QuestManager.HasQuest("path_" + cfg.RequirePath);
+    }
+
+    /// <summary>
+    /// Binds RaiseSpellId/DismissSpellId to real spellcasting: WorldObject.HandleCastSpell runs only after
+    /// a cast has succeeded (mana/components spent, fizzle roll passed upstream in Player_Magic.cs; verified
+    /// ACE master, Source/ACE.Server/WorldObjects/WorldObject_Magic.cs line 259). Only a player's own direct
+    /// cast (no item caster, not a proc, not an equip enchantment) of one of our own ids is claimed; every
+    /// other cast (monsters, items, procs, other mods' ids) falls through to stock behaviour untouched.
+    /// </summary>
+    [HarmonyPrefix]
+    [HarmonyPatch(typeof(WorldObject), "HandleCastSpell", new[] { typeof(Spell), typeof(WorldObject), typeof(WorldObject), typeof(WorldObject), typeof(bool), typeof(bool), typeof(bool) })]
+    public static bool PreHandleCastSpell(WorldObject __instance, Spell spell, WorldObject target, WorldObject itemCaster, bool fromProc, bool equip, ref bool __result)
+    {
+        var cfg = Cfg;
+        if (cfg is not { Enabled: true } || __instance is not Player p || itemCaster != null || fromProc || equip)
+            return true;
+
+        var id = spell.Id;
+        if (id != cfg.RaiseSpellId && id != cfg.DismissSpellId) return true;
+        if (id == 0) return true; // 0 = unbound; never claim the "no spell" sentinel
+
+        if (!OnPath(p, cfg))
+        {
+            Say(p.Session!, "Only a necromancer can shape this magic.");
+            __result = false;
+            return false;
+        }
+
+        if (id == cfg.RaiseSpellId) RaiseFromNearestCorpse(p, cfg);
+        else DismissAll(p);
+
+        __result = true;
+        return false;
     }
 }

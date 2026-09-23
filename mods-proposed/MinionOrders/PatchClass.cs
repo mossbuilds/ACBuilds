@@ -99,6 +99,12 @@ public class PatchClass(BasicMod mod, string settingsName = "Settings.json") : B
             if (sel == null || sel.IsDead || sel is Player) { Say(session, "Select a monster first."); return; }
         }
 
+        GiveOrder(player, cfg, verb, targetGuid);
+    }
+
+    /// <summary>Shared by /order and the spell-bound cast hook. targetGuid is only consulted for "attack".</summary>
+    public static void GiveOrder(Player player, Settings cfg, string verb, uint targetGuid)
+    {
         var owner = player.Guid.Full;
         int n = 0;
         foreach (var lb in LandblockManager.GetLoadedLandblocks())
@@ -131,6 +137,51 @@ public class PatchClass(BasicMod mod, string settingsName = "Settings.json") : B
                     }
                 }).EnqueueChain();
             }
-        Say(session, n == 0 ? "You have no minions to command." : "Order '" + verb + "' given to " + n + " minion(s).");
+        Say(player.Session, n == 0 ? "You have no minions to command." : "Order '" + verb + "' given to " + n + " minion(s).");
+    }
+
+    private static bool OnPath(Player p, Settings cfg)
+    {
+        if (string.IsNullOrEmpty(cfg.RequirePath)) return true;
+        return p.QuestManager.HasQuest("path_" + cfg.RequirePath);
+    }
+
+    /// <summary>
+    /// Binds AttackSpellId/HoldSpellId/FollowSpellId to real spellcasting via WorldObject.HandleCastSpell
+    /// (runs only after a successful cast - see RaiseSkeleton's PreHandleCastSpell for the verified hook
+    /// details). Only a player's own direct cast is claimed; every other cast falls through untouched.
+    /// For "attack", the cast's own target is used when it is a hostile Creature; otherwise falls back to
+    /// the player's current selection (HealthQueryTarget), same as /order attack.
+    /// </summary>
+    [HarmonyPrefix]
+    [HarmonyPatch(typeof(WorldObject), "HandleCastSpell", new[] { typeof(Spell), typeof(WorldObject), typeof(WorldObject), typeof(WorldObject), typeof(bool), typeof(bool), typeof(bool) })]
+    public static bool PreHandleCastSpell(WorldObject __instance, Spell spell, WorldObject target, WorldObject itemCaster, bool fromProc, bool equip, ref bool __result)
+    {
+        var cfg = Cfg;
+        if (cfg is not { Enabled: true } || __instance is not Player p || itemCaster != null || fromProc || equip)
+            return true;
+
+        var id = spell.Id;
+        if (id == 0) return true; // 0 = unbound; never claim the "no spell" sentinel
+        string? verb = id == cfg.AttackSpellId ? "attack" : id == cfg.HoldSpellId ? "hold" : id == cfg.FollowSpellId ? "follow" : null;
+        if (verb == null) return true;
+
+        if (!OnPath(p, cfg))
+        {
+            Say(p.Session, "Only a necromancer can shape this magic.");
+            __result = false;
+            return false;
+        }
+
+        uint targetGuid = 0;
+        if (verb == "attack")
+        {
+            var hostile = target as Creature;
+            targetGuid = hostile != null && !hostile.IsDead && hostile is not Player && p.CanDamage(hostile) ? hostile.Guid.Full : p.HealthQueryTarget ?? 0;
+        }
+
+        GiveOrder(p, cfg, verb, targetGuid);
+        __result = true;
+        return false;
     }
 }

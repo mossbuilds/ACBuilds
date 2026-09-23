@@ -13,4 +13,16 @@ public class Settings
     public float BurstRadius { get; set; } = 8f;
     public int ManaCost { get; set; } = 0;
     public int CorpseMaxAgeSec { get; set; } = 0;
+
+    /// <summary>
+    /// Spell id that, when cast by a player, runs the corpse-burst ability instead of its stock effect
+    /// (bound via WorldObject.HandleCastSpell). 0 = unbound. Recommended once confirmed player-castable
+    /// with /spellinfo: 5544 "Nether Blast I" (Void Magic bolt/AoE family, usage 0 - the pick in
+    /// docs/NECROMANCER_SPELLS.md for corpse_explosion). Ship at 0 until verified in game.
+    /// </summary>
+    public uint BurstSpellId { get; set; } = 0;
+
+    /// <summary>Necromancer-only gate for BurstSpellId, checked via PathChoice's quest stamp (path_&lt;name&gt;).
+    /// Empty string = no gate.</summary>
+    public string RequirePath { get; set; } = "necromancer";
 }

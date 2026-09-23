@@ -30,3 +30,28 @@ Apply both with the ac-creator tool before setting `Enabled` true; `DeviceWcid` 
 
 ## Unverified
 Not compiled. Not tested in game: CombatPet AI with several pets of one owner (ACE assumes one), whether `Corpse.Level` is ever set, and that the retail level-50 skeleton pet is not too strong for your economy.
+
+## Spell binding
+`/raiseskel` and `/dismiss` are also real spells: `Settings.RaiseSpellId` / `DismissSpellId` (both `0` = unbound
+by default). Casting either spell runs `RaiseFromNearestCorpse` / `DismissAll` instead of the spell's stock
+effect - mana, components, cast animation, fizzle chance and skill gain all happen normally, since the bind
+point (`WorldObject.HandleCastSpell`, ACE master `WorldObjects/WorldObject_Magic.cs` line 259) only runs after
+the cast has already succeeded (Player_Magic.cs already spent components/mana and rolled fizzle). The Harmony
+prefix only claims a cast when it is a player's own direct cast (`itemCaster == null`, `!fromProc`, `!equip`)
+of one of these two ids; every other cast (monsters, items, procs, other mods' ids, id `0`) falls through to
+stock behaviour untouched.
+
+Gated by `Settings.RequirePath` (default `"necromancer"`, checked with
+`player.QuestManager.HasQuest("path_" + RequirePath)`, the same stamp `PathChoice` writes with
+`/path choose necromancer`; empty string = no gate). A non-necromancer casting a bound spell gets "Only a
+necromancer can shape this magic.", the ability does not run, and the stock spell effect is also skipped (the
+mana/components are still spent - the cast already succeeded upstream).
+
+Recommended spell ids, both currently unused (usage 0 in `docs/necromancer-spells-data/necro_candidates_usage.tsv`):
+- `RaiseSpellId`: **3801 "Shadow Touch"** - dark-touch flavored, thematically fits a raise.
+- `DismissSpellId`: **3803 "Shadow Shot"** - distinct id, same Void-family flavor.
+
+**Ship both settings at 0.** Before flipping either on: `/spellinfo 3801` and `/spellinfo 3803` (SpellInfo
+mod) to confirm `player-castable: yes`, then `/addspell 3801` / `/addspell 3803` on a test character and cast
+each from the spellbook to confirm it actually fires `RaiseFromNearestCorpse`/`DismissAll` before relying on
+it live.

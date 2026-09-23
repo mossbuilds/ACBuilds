@@ -26,4 +26,24 @@ public class Settings
     public int MinionMinutes { get; set; } = 30;
     /// <summary>Only corpses whose Level is at least this can be raised (0 = any; a corpse with no Level is refused when this is above 0).</summary>
     public int MinCorpseLevel { get; set; } = 0;
+
+    /// <summary>
+    /// Spell id that, when cast by a player, runs RaiseFromNearestCorpse instead of its stock effect
+    /// (HandleCastSpell prefix). 0 = unbound (no spell triggers this). Recommended once confirmed
+    /// player-castable with /spellinfo: 3801 "Shadow Touch" (Void Magic, usage 0 - see docs/NECROMANCER_SPELLS.md).
+    /// Ship this at 0 until /spellinfo 3801 -> /addspell 3801 -> cast has been checked in game.
+    /// </summary>
+    public uint RaiseSpellId { get; set; } = 0;
+
+    /// <summary>
+    /// Spell id that, when cast by a player, runs DismissAll instead of its stock effect. 0 = unbound.
+    /// Recommended once confirmed player-castable: 3803 "Shadow Shot" (Void Magic, usage 0). Distinct from
+    /// RaiseSpellId and from every other bound id in MinionOrders/CorpseBurst. Ship at 0 until verified.
+    /// </summary>
+    public uint DismissSpellId { get; set; } = 0;
+
+    /// <summary>Necromancer-only gate for RaiseSpellId/DismissSpellId, checked via PathChoice's quest stamp
+    /// (QuestPrefix + this name, default "path_necromancer"). Empty string = no gate (anyone who has the
+    /// spell can cast it).</summary>
+    public string RequirePath { get; set; } = "necromancer";
 }
