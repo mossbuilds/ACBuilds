@@ -7,11 +7,17 @@
 #   ace-vr-server  VR-enabled ACE  UDP 9100/9101   (Thwargle/ACE fork, for AC:VR)
 # BIND_IP (in /opt/acbuilds/.env) is 127.0.0.1 until the owner account exists, then 0.0.0.0 to open the game to the internet.
 name: acbuilds
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "50m"
+    max-file: "3"
 services:
   ace-db:
     image: ghcr.io/mossbuilds/acbuilds-db:${ACB_TAG:-latest}
     container_name: ace-db
     restart: unless-stopped
+    logging: *default-logging
     environment:
       INNODB_BUFFER_POOL_SIZE: ${INNODB_BUFFER_POOL_SIZE:-1G}
     volumes:
@@ -21,6 +27,7 @@ services:
     image: ghcr.io/mossbuilds/acbuilds-server:${ACB_TAG:-latest}
     container_name: ace-server
     restart: unless-stopped
+    logging: *default-logging
     depends_on:
       ace-db: { condition: service_healthy }
     ports:
@@ -34,6 +41,7 @@ services:
     image: ghcr.io/mossbuilds/acbuilds-vr-server:${ACB_TAG:-latest}
     container_name: ace-vr-server
     restart: unless-stopped
+    logging: *default-logging
     depends_on:
       ace-db: { condition: service_healthy }
     ports:
