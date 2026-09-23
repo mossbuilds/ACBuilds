@@ -1,0 +1,10 @@
+{
+  "Name": "SpellInfo",
+  "Author": "Moss (agent) for ACBuilds",
+  "Description": "Admin, read-only: inspect a client DAT spell (name, school, mana, formula, player-castable heuristic) before binding it to a mod ability.",
+  "Version": "1.0.0",
+  "Enabled": false,
+  "HotReload": true,
+  "RegisterCommands": true,
+  "ACEVersion": "0.0"
+}
