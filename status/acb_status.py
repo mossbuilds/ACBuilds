@@ -590,8 +590,17 @@ class CommunityStore:
         os.replace(tmp, self.path)
 
     def voter_hash(self, ip):
-        d = self._load()
-        return hashlib.sha256((d["salt"] + ip).encode("utf-8")).hexdigest()[:16]
+        # the salt must be created and saved ONCE - _load() makes a fresh random one whenever the file has none, so
+        # without persisting it here the first voter's hash would differ from their later ones (a free second vote)
+        with self.lock:
+            d = self._load()
+            try:
+                on_disk = json.loads(self.path.read_text(encoding="utf-8")).get("salt")
+            except Exception:
+                on_disk = None
+            if on_disk != d["salt"]:
+                self._save(d)
+            return hashlib.sha256((d["salt"] + ip).encode("utf-8")).hexdigest()[:16]
 
     @staticmethod
     def _rate_ok(hits, voter, limit):
