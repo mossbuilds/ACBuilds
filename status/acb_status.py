@@ -7,7 +7,7 @@ Runs on the host next to the Docker containers (Python standard library only), s
   python3 acb_status.py [--port 8618] [--data DIR]        DIR holds locations.xml and cod_locations.xml
   python3 acb_status.py --once                            print the JSON once and exit (debug)
 """
-import argparse, datetime, html, json, math, os, re, subprocess, sys, threading, time
+import argparse, datetime, html, json, math, os, re, subprocess, sys, threading, time, urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -23,6 +23,20 @@ ACCESS = {0: "Player", 1: "Advocate", 2: "Sentinel", 3: "Envoy", 4: "Developer",
 PLACE_TYPES = {"Town", "Village", "Landmark", "Dungeon", "Outpost", "Allegiance Hall", "Lifestone", "Bindstone",
                "Town Building", "Meeting Hall", "Lanmark", "Nendor"}
 TOWN_TYPES = {"Town", "Village"}
+
+# ------------------------------------------------------------------ mods page (public: names/descriptions only)
+MODS_DIR = Path(os.environ.get("ACB_MODS_DIR", "/opt/acbuilds/mods"))
+MODS_VR_DIR = Path(os.environ.get("ACB_MODS_VR_DIR", "/opt/acbuilds/mods-vr"))
+STATUS_MD_URL = os.environ.get("ACB_STATUS_MD_URL", "https://raw.githubusercontent.com/mossbuilds/ACBuilds/main/mods-proposed/STATUS.md")
+IDEAS_MD_URL = os.environ.get("ACB_IDEAS_MD_URL", "https://raw.githubusercontent.com/mossbuilds/ACBuilds/main/mods-proposed/IDEAS.md")
+HOPPER_LIST_URL = os.environ.get("ACB_HOPPER_LIST_URL", "https://loam.mossbuilds.xyz/hopper/list.json")
+HOPPER_TOKEN_FILE = Path(os.environ.get("ACB_HOPPER_TOKEN_FILE", "/opt/acbuilds/.hopper_token"))
+MODS_CACHE_TTL = int(os.environ.get("ACB_MODS_CACHE_TTL", "300"))
+
+
+def mod_servers():
+    """(key, label, port, dir) read live so tests can override the module-level dir constants."""
+    return [("stock", "Normal server", 9000, MODS_DIR), ("vr", "VR server", 9100, MODS_VR_DIR)]
 
 
 # ------------------------------------------------------------------ helpers
@@ -424,6 +438,305 @@ def collect(places):
     return data
 
 
+# ------------------------------------------------------------------ mods: collectors + cache
+_MODS_CACHE = {}  # key -> (fetched_at, ("ok", value) | ("error", message))
+
+
+def _cached(key, fn):
+    now = time.time()
+    hit = _MODS_CACHE.get(key)
+    if hit and now - hit[0] < MODS_CACHE_TTL:
+        return hit[1]
+    try:
+        val = ("ok", fn())
+    except Exception as e:
+        val = ("error", str(e)[:200])
+    _MODS_CACHE[key] = (now, val)
+    return val
+
+
+def name_key(name):
+    """Case- and punctuation-insensitive key for matching a mod name across sources (spaces, _, -, markdown **)."""
+    return re.sub(r"[^a-z0-9]+", "", (name or "").lower())
+
+
+def deployed_mods(mods_dir):
+    """Mod name + Enabled flag for each subfolder of a mounted mods dir. Never returns paths beyond the mod name."""
+    out = []
+    try:
+        for p in sorted(Path(mods_dir).iterdir(), key=lambda p: p.name.lower()):
+            if not p.is_dir():
+                continue
+            enabled = False
+            meta = p / "Meta.json"
+            if meta.exists():
+                try:
+                    j = json.loads(meta.read_text(encoding="utf-8", errors="replace"))
+                    enabled = bool(j.get("Enabled"))
+                except Exception:
+                    enabled = False
+            out.append({"name": p.name, "enabled": enabled})
+    except OSError:
+        pass
+    return out
+
+
+def fetch_text(url, timeout=10):
+    with urllib.request.urlopen(url, timeout=timeout) as r:
+        return r.read().decode("utf-8", "replace")
+
+
+def parse_status_md(text):
+    """STATUS.md rows: `Name | READY (compiled; ...) | date | summary`. Skip header/blank/non-pipe lines."""
+    rows = []
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "|" not in line:
+            continue
+        parts = [p.strip() for p in line.split("|")]
+        if len(parts) < 2 or not parts[0]:
+            continue
+        name, field2 = parts[0], parts[1]
+        status = (field2.split() or [""])[0]
+        if len(parts) >= 4 and parts[3]:
+            summary = parts[3]
+        else:
+            m = re.search(r"\((.*)\)", field2)
+            summary = (m.group(1) if m else field2)
+        rows.append({"name": name, "status": status, "summary": summary[:160]})
+    return rows
+
+
+IDEA_LINE = re.compile(r"^(\d+)\.\s+(.+?)\s*\(feas\s*(\d+)\)\s*-\s*(.*)$")
+
+
+def parse_ideas_md(text):
+    """IDEAS.md numbered entries: `61. LuminanceLedger (feas 5) - Read-only player command ...`."""
+    out = []
+    for line in text.splitlines():
+        m = IDEA_LINE.match(line.strip())
+        if not m:
+            continue
+        num, name, feas, rest = m.groups()
+        desc = rest.strip()
+        cut = desc.find(". ")
+        if cut != -1:
+            desc = desc[:cut + 1]
+        out.append({"num": int(num), "name": name.strip().strip("*").strip(), "feas": int(feas), "desc": desc[:200].strip()})
+    return out
+
+
+def fetch_hopper_ideas():
+    """Hopper items tagged acbuilds/ac-event, open/blocked/building. None (skip quietly) if the token is unavailable."""
+    try:
+        token = HOPPER_TOKEN_FILE.read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+    if not token:
+        return None
+    req = urllib.request.Request(HOPPER_LIST_URL, headers={"Authorization": f"Bearer {token}"})
+    with urllib.request.urlopen(req, timeout=10) as r:
+        d = json.loads(r.read().decode("utf-8", "replace"))
+    out = []
+    for i in d.get("ideas", []):
+        tags = i.get("tags") or []
+        if not any(t in ("acbuilds", "ac-event") for t in tags):
+            continue
+        if i.get("status") not in ("open", "blocked", "building"):
+            continue
+        out.append({"id": i.get("id"), "status": i.get("status"), "text": (i.get("text") or "")[:220]})
+    return out
+
+
+def mods_data():
+    """Everything /mods and /api/mods need, computed live with a 5-minute cache on the remote fetches only."""
+    servers = []
+    deployed_keys = set()
+    for key, label, port, dirpath in mod_servers():
+        mods = deployed_mods(dirpath)
+        for m in mods:
+            deployed_keys.add(name_key(m["name"]))
+        servers.append({"key": key, "label": label, "port": port,
+                         "enabled": [m for m in mods if m["enabled"]],
+                         "disabled": [m for m in mods if not m["enabled"]]})
+
+    st_state, st_val = _cached("status_md", lambda: parse_status_md(fetch_text(STATUS_MD_URL)))
+    status_rows = st_val if st_state == "ok" else []
+    status_error = None if st_state == "ok" else st_val
+    status_keys = {name_key(r["name"]) for r in status_rows}
+    ready = [r for r in status_rows if r["status"] == "READY"]
+    not_ready = [r for r in status_rows if r["status"] != "READY"]
+    built_not_deployed = [r for r in ready if name_key(r["name"]) not in deployed_keys]
+
+    id_state, id_val = _cached("ideas_md", lambda: parse_ideas_md(fetch_text(IDEAS_MD_URL)))
+    idea_rows = id_val if id_state == "ok" else []
+    idea_error = None if id_state == "ok" else id_val
+    known = status_keys | deployed_keys
+    # some ideas carry alternative names ("WhereIsEveryone / PlayerFinder"): built if any of them was built
+    ideas_not_built = [i for i in idea_rows
+                        if not any(name_key(n) in known for n in str(i["name"]).split("/") if n.strip())]
+
+    hp_state, hp_val = _cached("hopper_ideas", fetch_hopper_ideas)
+    hopper_error = None if hp_state == "ok" else hp_val
+    hopper_rows = hp_val if (hp_state == "ok" and hp_val) else []
+
+    return {
+        "generated": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "servers": servers,
+        "built_not_deployed": built_not_deployed,
+        "built_not_deployed_error": status_error,
+        "in_progress": not_ready,
+        "in_progress_error": status_error,
+        "ideas_not_built": ideas_not_built,
+        "ideas_error": idea_error,
+        "hopper_ideas": hopper_rows,
+        "hopper_error": hopper_error,
+    }
+
+
+def _esc(s):
+    return html.escape(str(s), quote=True)
+
+
+def _mod_rows_html(items, empty_note, cols):
+    """cols: list of (key, css_class_or_None) picking fields out of each dict item, joined into <td>s."""
+    if not items:
+        return f'<div class="muted">{_esc(empty_note)}</div>'
+    out = ['<div class="tablewrap"><table><tbody>']
+    for it in items:
+        cells = "".join(("<td class='%s'>" % c if c else "<td>") + _esc(it.get(k, "")) + "</td>" for k, c in cols)
+        search = _esc(" ".join(str(it.get(k, "")) for k, _ in cols).lower())
+        out.append(f'<tr data-s="{search}">{cells}</tr>')
+    out.append("</tbody></table></div>")
+    return "".join(out)
+
+
+def render_mods_html(d):
+    servers_html = []
+    for s in d["servers"]:
+        servers_html.append(f'''
+    <div class="card">
+      <h2>{_esc(s["label"])} &middot; port {s["port"]}</h2>
+      <div class="title"><b>Enabled ({len(s["enabled"])})</b></div>
+      {_mod_rows_html(s["enabled"], "none enabled", [("name", None)])}
+      <div class="title" style="margin-top:10px"><b>Disabled ({len(s["disabled"])})</b></div>
+      {_mod_rows_html(s["disabled"], "none disabled", [("name", None)])}
+    </div>''')
+
+    built_html = (f'<div class="muted">couldn\'t load right now ({_esc(d["built_not_deployed_error"])})</div>'
+                  if d["built_not_deployed_error"] else
+                  _mod_rows_html(d["built_not_deployed"], "nothing built and waiting", [("name", None), ("summary", "wide")]))
+    progress_html = (f'<div class="muted">couldn\'t load right now ({_esc(d["in_progress_error"])})</div>'
+                      if d["in_progress_error"] else
+                      _mod_rows_html(d["in_progress"], "nothing in progress",
+                                     [("name", None), ("status", None), ("summary", "wide")]))
+    ideas_html = (f'<div class="muted">couldn\'t load right now ({_esc(d["ideas_error"])})</div>'
+                  if d["ideas_error"] else
+                  _mod_rows_html(d["ideas_not_built"], "no un-built ideas",
+                                 [("num", None), ("name", None), ("feas", None), ("desc", "wide")]))
+    hopper_html = (f'<div class="muted">couldn\'t load right now ({_esc(d["hopper_error"])})</div>'
+                   if d["hopper_error"] else
+                   _mod_rows_html(d["hopper_ideas"], "nothing from the hopper right now",
+                                  [("id", None), ("status", None), ("text", "wide")]))
+
+    enabled_count = sum(len(s["enabled"]) for s in d["servers"])
+    disabled_count = sum(len(s["disabled"]) for s in d["servers"])
+    built_count = len(d["built_not_deployed"]) if not d["built_not_deployed_error"] else 0
+    progress_count = len(d["in_progress"]) if not d["in_progress_error"] else 0
+    ideas_count = (len(d["ideas_not_built"]) if not d["ideas_error"] else 0) + \
+                  (len(d["hopper_ideas"]) if not d["hopper_error"] else 0)
+
+    return f'''<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="refresh" content="300">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ACBuilds Mods</title>
+<style>
+  :root {{
+    --bg: #f4f5f7; --panel: #ffffff; --ink: #1c2330; --muted: #667085; --line: #e3e6ec;
+    --accent: #2b5fd9; --shadow: 0 1px 2px rgba(16,24,40,.06), 0 1px 3px rgba(16,24,40,.08);
+  }}
+  @media (prefers-color-scheme: dark) {{
+    :root {{ --bg: #10141b; --panel: #171c26; --ink: #e7eaf0; --muted: #98a2b3; --line: #262d3b; --accent: #7aa2ff; --shadow: none; }}
+  }}
+  * {{ box-sizing: border-box; }}
+  body {{ margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }}
+  .wrap {{ max-width: 1000px; margin: 0 auto; padding: 20px 16px 48px; }}
+  header {{ display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }}
+  h1 {{ font-size: 20px; margin: 0; letter-spacing: .2px; }}
+  .sub {{ color: var(--muted); font-size: 12px; }}
+  .sub a {{ color: var(--accent); }}
+  .grid {{ display: grid; gap: 14px; }}
+  .g2 {{ grid-template-columns: repeat(2, 1fr); }}
+  @media (max-width: 780px) {{ .g2 {{ grid-template-columns: 1fr; }} }}
+  .card {{ background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; box-shadow: var(--shadow); min-width: 0; margin-bottom: 14px; }}
+  .card h2 {{ font-size: 13px; text-transform: uppercase; letter-spacing: .6px; color: var(--muted); margin: 0 0 4px; font-weight: 600; }}
+  .card h2 .n {{ color: var(--accent); }}
+  .note {{ color: var(--muted); font-size: 12px; margin: 0 0 10px; }}
+  .title {{ margin-bottom: 4px; }}
+  .tablewrap {{ overflow-x: auto; }}
+  table {{ border-collapse: collapse; width: 100%; }}
+  td {{ text-align: left; padding: 5px 8px; border-bottom: 1px dashed var(--line); vertical-align: top; white-space: nowrap; font-size: 13px; }}
+  td.wide {{ white-space: normal; }}
+  tr:hover td {{ background: color-mix(in srgb, var(--accent) 6%, transparent); }}
+  .muted {{ color: var(--muted); font-size: 12px; }}
+  input[type=search] {{ background: var(--bg); color: var(--ink); border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; font: inherit; width: 100%; margin-bottom: 16px; }}
+  footer {{ margin-top: 18px; color: var(--muted); font-size: 12px; }}
+  tr.hide {{ display: none; }}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>ACBuilds mods</h1>
+      <div class="sub"><a href="/">&larr; server status</a></div>
+    </div>
+    <div class="sub">Updated {_esc(d["generated"])} UTC &middot; refreshes every 5 minutes</div>
+  </header>
+
+  <input type="search" id="q" placeholder="Filter by mod name or text&hellip;">
+
+  <div class="grid g2">{"".join(servers_html)}</div>
+
+  <div class="card">
+    <h2>Built, not deployed <span class="n">({built_count})</span></h2>
+    <p class="note">Compiled and marked READY in the mods repo, but its folder isn't on either game server yet.</p>
+    {built_html}
+  </div>
+
+  <div class="card">
+    <h2>In progress / not ready <span class="n">({progress_count})</span></h2>
+    <p class="note">Started but not yet READY - work in progress, or needs an in-game test before it ships.</p>
+    {progress_html}
+  </div>
+
+  <div class="card">
+    <h2>Ideas, not built yet <span class="n">({ideas_count})</span></h2>
+    <p class="note">Researched ideas with no code started, plus open hopper items tagged for ACBuilds.</p>
+    {ideas_html}
+    <div class="title" style="margin-top:14px"><b>From the hopper</b></div>
+    {hopper_html}
+  </div>
+
+  <footer>Deployed/enabled state comes from each server's own mod folder; built and idea state come from the mods-proposed
+  repo and the hopper. Names and short descriptions only - no accounts, players, IPs or file paths.</footer>
+</div>
+<script>
+  var q = document.getElementById('q');
+  q.addEventListener('input', function () {{
+    var v = q.value.trim().toLowerCase();
+    document.querySelectorAll('tr[data-s]').forEach(function (tr) {{
+      tr.classList.toggle('hide', v && tr.getAttribute('data-s').indexOf(v) === -1);
+    }});
+  }});
+</script>
+</body>
+</html>'''
+
+
 # ------------------------------------------------------------------ server
 class State:
     def __init__(self, places, interval):
@@ -462,6 +775,16 @@ def make_handler(state, index_path):
             elif path == "/api/status":
                 with state.lock:
                     self._send(200, json.dumps(state.data), "application/json")
+            elif path == "/mods":
+                try:
+                    self._send(200, render_mods_html(mods_data()), "text/html; charset=utf-8")
+                except Exception as e:
+                    self._send(200, f"<pre>mods page failed: {html.escape(str(e))}</pre>", "text/html; charset=utf-8")
+            elif path == "/api/mods":
+                try:
+                    self._send(200, json.dumps(mods_data()), "application/json")
+                except Exception as e:
+                    self._send(200, json.dumps({"error": str(e)}), "application/json")
             elif path == "/healthz":
                 self._send(200, "ok", "text/plain")
             elif path == "/api/health":
